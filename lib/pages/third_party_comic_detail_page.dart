@@ -6,10 +6,12 @@ import '../api/third_party/third_party_sources.dart';
 import '../models/comic.dart' hide Theme;
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
+import '../utils/third_party_reading_progress.dart';
 import '../widgets/third_party_image.dart';
 import 'third_party_reader_page.dart';
 
 /// 第三方漫源（漫屋3/漫屋吧）详情页：标题/封面/作者/状态/简介 + 章节列表。
+/// 章节按阅读顺序正序展示（第一话在最上），顶部提供「开始/继续阅读」。
 class ThirdPartyComicDetailPage extends StatefulWidget {
   final String pathWord; // 形如 waman3:123456
   final Comic? initialComic;
@@ -37,6 +39,7 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
   ThirdPartyComicDetail? _detail;
   bool _loading = true;
   String? _error;
+  ThirdPartyProgressRecord? _progress;
 
   @override
   void initState() {
@@ -59,9 +62,14 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
     });
     try {
       final detail = await source.loadInfo(_comicId);
+      final progress = await ThirdPartyReadingProgress.read(
+        source.key,
+        _comicId,
+      );
       if (!mounted) return;
       setState(() {
         _detail = detail;
+        _progress = progress;
         _loading = false;
       });
     } catch (e) {
@@ -74,7 +82,8 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
     }
   }
 
-  void _openReader(List<ThirdPartyChapter> chapters, int index) {
+  void _openReader(List<ThirdPartyChapter> chapters, int index,
+      {int page = 1}) {
     final source = _source;
     if (source == null || chapters.isEmpty) return;
     Navigator.of(context).push(
@@ -85,9 +94,22 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
           comicName: _detail?.title ?? widget.initialComic?.name ?? '',
           chapters: chapters,
           initialIndex: index,
+          initialPage: page,
         ),
       ),
     );
+  }
+
+  /// 点「开始/继续阅读」：有进度从断点继续，否则从第一话开始。
+  void _openPrimaryReader() {
+    final detail = _detail;
+    if (detail == null || detail.chapters.isEmpty) return;
+    final p = _progress;
+    final index = (p != null && p.chapterIndex < detail.chapters.length)
+        ? p.chapterIndex
+        : 0;
+    final page = (p != null && p.chapterIndex == index) ? p.page : 1;
+    _openReader(detail.chapters, index, page: page);
   }
 
   @override
@@ -105,7 +127,11 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.cloud_off, size: 48, color: cs.onSurfaceVariant),
+                      Icon(
+                        Icons.cloud_off,
+                        size: 48,
+                        color: cs.onSurfaceVariant,
+                      ),
                       const SizedBox(height: AppSpacing.md),
                       Text(_error!, style: tt.bodySmall),
                       const SizedBox(height: AppSpacing.md),
@@ -125,8 +151,10 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
     final cover = detail.cover.isNotEmpty
         ? detail.cover
         : (widget.initialComic?.cover ?? '');
-    // 章节按阅读顺序（旧->新）展示为「最新在上」
-    final chapters = detail.chapters.reversed.toList();
+    // 章节按阅读顺序正序展示：第一话在最上
+    final chapters = detail.chapters;
+    final hasProgress =
+        _progress != null && _progress!.chapterIndex < chapters.length;
 
     return CustomScrollView(
       slivers: [
@@ -232,6 +260,28 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
               ),
             ),
           ),
+        // ── 开始/继续阅读：放在章节列表最上方（第一话上面）──
+        if (chapters.isNotEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _openPrimaryReader,
+                  icon: Icon(
+                    hasProgress ? Icons.history : Icons.play_arrow,
+                  ),
+                  label: Text(
+                    hasProgress
+                        ? '继续阅读：${_progress!.chapterName}'
+                            '${_progress!.page > 1 ? ' · 第${_progress!.page}页' : ''}'
+                        : '开始阅读（第一话）',
+                  ),
+                ),
+              ),
+            ),
+          ),
         if (chapters.isNotEmpty)
           SliverToBoxAdapter(
             child: Padding(
@@ -250,19 +300,20 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
           ),
         if (chapters.isNotEmpty)
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
             sliver: SliverList.separated(
               itemCount: chapters.length,
               separatorBuilder: (_, _) => const SizedBox(height: 6),
               itemBuilder: (context, i) {
                 final chapter = chapters[i];
-                final realIndex = detail.chapters.length - 1 - i;
+                final isProgressChapter = hasProgress &&
+                    _progress!.chapterIndex == i;
                 return Material(
                   color: cs.surfaceContainerLow,
                   borderRadius: AppRadius.mdR,
                   child: InkWell(
                     borderRadius: AppRadius.mdR,
-                    onTap: () => _openReader(detail.chapters, realIndex),
+                    onTap: () => _openReader(chapters, i),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 14,
@@ -271,9 +322,13 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.menu_book_outlined,
+                            isProgressChapter
+                                ? Icons.play_circle_fill
+                                : Icons.menu_book_outlined,
                             size: 18,
-                            color: cs.onSurfaceVariant,
+                            color: isProgressChapter
+                                ? cs.primary
+                                : cs.onSurfaceVariant,
                           ),
                           const SizedBox(width: AppSpacing.sm),
                           Expanded(
@@ -281,9 +336,24 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
                               chapter.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: tt.bodyMedium,
+                              style: tt.bodyMedium?.copyWith(
+                                color: isProgressChapter ? cs.primary : null,
+                                fontWeight: isProgressChapter
+                                    ? FontWeight.w600
+                                    : null,
+                              ),
                             ),
                           ),
+                          if (isProgressChapter &&
+                              _progress!.page > 1) ...[
+                            Text(
+                              '读到第${_progress!.page}页',
+                              style: tt.labelSmall?.copyWith(
+                                color: cs.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
                           Icon(
                             Icons.chevron_right,
                             size: 20,
@@ -304,25 +374,14 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.inbox_outlined, size: 56, color: cs.onSurfaceVariant),
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 56,
+                    color: cs.onSurfaceVariant,
+                  ),
                   const SizedBox(height: AppSpacing.md),
                   Text('暂无章节', style: tt.bodyMedium),
                 ],
-              ),
-            ),
-          ),
-        if (chapters.isNotEmpty)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: () =>
-                      _openReader(detail.chapters, detail.chapters.length - 1),
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('开始阅读（最新话）'),
-                ),
               ),
             ),
           ),

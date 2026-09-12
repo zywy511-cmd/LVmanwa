@@ -111,11 +111,15 @@ class TpAwareImage extends StatelessWidget {
   final String url;
   final BoxFit fit;
 
+  /// 加载中占位高度（滚动阅读模式下 fitWidth 且图片高度未知时使用）。
+  final double? loadingHeight;
+
   const TpAwareImage({
     super.key,
     required this.sourceKey,
     required this.url,
     this.fit = BoxFit.cover,
+    this.loadingHeight,
   });
 
   @override
@@ -143,11 +147,14 @@ class TpAwareImage extends StatelessWidget {
       errorBuilder: (_, _, _) => _tpImageError(context),
       frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
         if (wasSynchronouslyLoaded || frame != null) return child;
-        return const Center(
-          child: SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 2),
+        return SizedBox(
+          height: loadingHeight,
+          child: const Center(
+            child: SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
           ),
         );
       },
