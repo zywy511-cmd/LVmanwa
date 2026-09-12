@@ -24,6 +24,15 @@ import 'home_page.dart' show ComicCard;
 
 enum _SearchMode { comic, anime }
 
+/// 单源搜索结果切片。
+typedef _SourceSlice = ({
+  List<Comic> comics,
+  List<String> labels,
+  int page,
+  int maxPage,
+  int total,
+});
+
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key});
 
@@ -46,11 +55,10 @@ class _SearchPageState extends State<SearchPage> {
   List<Anime> _animes = [];
 
   // ── 多源聚合搜索状态 ──
-  // 'hot'=热辣 'copy'=拷贝 'waman3'=漫屋3 'manwaba'=漫屋吧
+  // 'hotcopy'=热辣·拷贝（合并去重） 'waman3'=漫屋3 'manwaba'=漫屋吧
   static const _sourceOptions = [
     ('all', '全部'),
-    ('hot', '热辣'),
-    ('copy', '拷贝'),
+    ('hotcopy', '热辣·拷贝'),
     ('waman3', '漫屋3'),
     ('manwaba', '漫屋吧'),
   ];
@@ -60,6 +68,11 @@ class _SearchPageState extends State<SearchPage> {
   final Map<String, int> _sourceTotals = {}; // 每源总条数
   final List<String> _sourceLabels = []; // 与 _comics 逐项对齐的来源名
   int _pendingSearches = 0; // 「全部」模式并行首查未完成数
+  final Set<String> _seenTitles = {}; // 「全部」模式跨源去重（标题）
+
+  // 「全部」模式优先级：热辣/拷贝 优先展示，其次漫屋3、漫屋吧
+  static const _allPrimary = ['hot', 'copy'];
+  static const _allSecondary = ['waman3', 'manwaba'];
 
   String _sourceName(String key) {
     for (final (k, name) in _sourceOptions) {
@@ -171,13 +184,20 @@ class _SearchPageState extends State<SearchPage> {
   }
 
   /// 单个源的第 page 页搜索结果（1-based）。
-  Future<({List<Comic> comics, int page, int maxPage, int total})>
-      _searchSourcePage(String sourceKey, String keyword, int page) async {
+  Future<_SourceSlice> _searchSourcePage(
+    String sourceKey,
+    String keyword,
+    int page,
+  ) async {
     switch (sourceKey) {
       case 'hot':
-        final r = await _api.manga.searchComics(keyword, offset: (page - 1) * 20);
+        final r = await _api.manga.searchComics(
+          keyword,
+          offset: (page - 1) * 20,
+        );
         return (
           comics: r.list,
+          labels: List.filled(r.list.length, '热辣'),
           page: page,
           maxPage: r.total <= 0 ? 1 : ((r.total + 19) ~/ 20),
           total: r.total,
@@ -189,30 +209,110 @@ class _SearchPageState extends State<SearchPage> {
         );
         return (
           comics: r.list,
+          labels: List.filled(r.list.length, '拷贝'),
           page: page,
           maxPage: r.total <= 0 ? 1 : ((r.total + 19) ~/ 20),
           total: r.total,
         );
+      case 'hotcopy':
+        // 热辣·拷贝合并源：两源同页并行 + 按标题去重（热辣优先）。
+        // 页码以热辣为准推进（两源内容相同，页数一致）。
+        final results = await Future.wait([
+          _searchSourcePage('hot', keyword, page),
+          _searchSourcePage('copy', keyword, page),
+        ]);
+        final merged = _mergeSlicesDedup(results);
+        return (
+          comics: merged.comics,
+          labels: merged.labels,
+          page: page,
+          maxPage: results[0].maxPage,
+          total: results[0].total,
+        );
       default:
         final source = ThirdPartySources.byKey(sourceKey);
         if (source == null) {
-          return (comics: const <Comic>[], page: 1, maxPage: 1, total: 0);
+          return (
+            comics: const <Comic>[],
+            labels: const <String>[],
+            page: 1,
+            maxPage: 1,
+            total: 0,
+          );
         }
         final r = await source.search(keyword, page);
         final total = r.maxPage * 20;
-        return (comics: r.comics, page: page, maxPage: r.maxPage, total: total);
+        return (
+          comics: r.comics,
+          labels: List.filled(r.comics.length, _sourceName(sourceKey)),
+          page: page,
+          maxPage: r.maxPage,
+          total: total,
+        );
     }
   }
 
-  /// 漫画搜索：单源直接查；「全部」四源并行首查并聚合。
+  /// 按传入顺序合并多个切片并去重（保留先出现的，即优先级高的）。
+  _SourceSlice _mergeSlicesDedup(List<_SourceSlice> slices) {
+    final seen = <String>{};
+    final comics = <Comic>[];
+    final labels = <String>[];
+    for (final s in slices) {
+      for (var i = 0; i < s.comics.length; i++) {
+        final key = s.comics[i].name.trim();
+        if (key.isEmpty || !seen.add(key)) continue;
+        comics.add(s.comics[i]);
+        labels.add(s.labels[i]);
+      }
+    }
+    return (
+      comics: comics,
+      labels: labels,
+      page: slices.first.page,
+      maxPage: slices.first.maxPage,
+      total: slices.first.total,
+    );
+  }
+
+  /// 「全部」模式：按 [order] 顺序把已完成的源结果追加进列表（跨源去重）。
+  void _appendAllSources(Map<String, _SourceSlice> results, List<String> order) {
+    for (final key in order) {
+      final slice = results[key];
+      if (slice == null) continue;
+      for (var i = 0; i < slice.comics.length; i++) {
+        final t = slice.comics[i].name.trim();
+        if (t.isEmpty || !_seenTitles.add(t)) continue;
+        _comics.add(slice.comics[i]);
+        _sourceLabels.add(slice.labels[i]);
+      }
+    }
+  }
+
+  /// 漫画搜索：单源直接查；「全部」四源并行首查并按优先级聚合。
+  /// 优先级：热辣/拷贝（合并去重）优先展示，其次漫屋3、漫屋吧。
   Future<void> _doSearchComic(String keyword, _SearchMode mode) async {
     _sourcePages.clear();
     _sourceMaxPages.clear();
     _sourceTotals.clear();
+    _seenTitles.clear();
     if (_sourceFilter == 'all') {
-      final sources = ['hot', 'copy', 'waman3', 'manwaba'];
-      _pendingSearches = sources.length;
-      for (final key in sources) {
+      const all = [..._allPrimary, ..._allSecondary];
+      _pendingSearches = all.length;
+      final primaryResults = <String, _SourceSlice>{};
+      final secondaryResults = <String, _SourceSlice>{};
+      void settlePrimary() {
+        if (primaryResults.length == _allPrimary.length) {
+          _appendAllSources(primaryResults, _allPrimary);
+        }
+      }
+
+      void settleSecondary() {
+        if (secondaryResults.length == _allSecondary.length) {
+          _appendAllSources(secondaryResults, _allSecondary);
+        }
+      }
+
+      for (final key in all) {
         unawaited(
           _searchSourcePage(key, keyword, 1).then((slice) {
             if (!mounted || _mode != mode || _searchQuery != keyword) return;
@@ -220,10 +320,13 @@ class _SearchPageState extends State<SearchPage> {
               _sourcePages[key] = slice.page;
               _sourceMaxPages[key] = slice.maxPage;
               _sourceTotals[key] = slice.total;
-              _comics.addAll(slice.comics);
-              _sourceLabels.addAll(
-                List.filled(slice.comics.length, _sourceName(key)),
-              );
+              if (_allPrimary.contains(key)) {
+                primaryResults[key] = slice;
+                settlePrimary();
+              } else {
+                secondaryResults[key] = slice;
+                settleSecondary();
+              }
               _offset = _comics.length;
               _pendingSearches--;
               if (_pendingSearches <= 0) _searching = false;
@@ -235,6 +338,20 @@ class _SearchPageState extends State<SearchPage> {
               _sourcePages[key] = 1;
               _sourceMaxPages[key] = 1;
               _sourceTotals[key] = 0;
+              const empty = (
+                comics: <Comic>[],
+                labels: <String>[],
+                page: 1,
+                maxPage: 1,
+                total: 0,
+              );
+              if (_allPrimary.contains(key)) {
+                primaryResults[key] = empty;
+                settlePrimary();
+              } else {
+                secondaryResults[key] = empty;
+                settleSecondary();
+              }
               _pendingSearches--;
               if (_pendingSearches <= 0) _searching = false;
             });
@@ -251,45 +368,48 @@ class _SearchPageState extends State<SearchPage> {
       _sourceMaxPages[_sourceFilter] = slice.maxPage;
       _sourceTotals[_sourceFilter] = slice.total;
       _comics = slice.comics;
-      _sourceLabels.addAll(
-        List.filled(slice.comics.length, _sourceName(_sourceFilter)),
-      );
+      _sourceLabels.addAll(slice.labels);
       _total = slice.total;
       _offset = slice.comics.length;
       _searching = false;
     });
   }
 
-  /// 「全部」模式加载更多：所有还有下一页的源并行取下一页。
+  /// 「全部」模式加载更多：按优先级分组（先热辣/拷贝，再漫屋3/漫屋吧）
+  /// 逐组并行取下一页并保序追加（跨源去重）。
   Future<void> _loadMoreAll() async {
     final keyword = _searchQuery;
     if (keyword == null) return;
-    final tasks = <Future<void>>[];
-    for (final key in const ['hot', 'copy', 'waman3', 'manwaba']) {
-      final loaded = _sourcePages[key] ?? 0;
-      final max = _sourceMaxPages[key] ?? 1;
-      if (loaded >= max) continue;
-      final next = loaded + 1;
-      tasks.add(
-        _searchSourcePage(key, keyword, next).then((slice) {
-          if (!mounted || _searchQuery != keyword) return;
-          setState(() {
-            _sourcePages[key] = slice.page;
-            _sourceMaxPages[key] = slice.maxPage;
-            _sourceTotals[key] = slice.total;
-            _comics.addAll(slice.comics);
-            _sourceLabels.addAll(
-              List.filled(slice.comics.length, _sourceName(key)),
-            );
-            _offset = _comics.length;
-          });
-        }).catchError((e) {
-          debugPrint('SearchPage $key loadMore error: $e');
-        }),
-      );
+    for (final group in const [_allPrimary, _allSecondary]) {
+      final results = <String, _SourceSlice>{};
+      final tasks = <Future<void>>[];
+      for (final key in group) {
+        final loaded = _sourcePages[key] ?? 0;
+        final max = _sourceMaxPages[key] ?? 1;
+        if (loaded >= max) continue;
+        final next = loaded + 1;
+        tasks.add(
+          _searchSourcePage(key, keyword, next).then((slice) {
+            if (!mounted || _searchQuery != keyword) return;
+            setState(() {
+              _sourcePages[key] = slice.page;
+              _sourceMaxPages[key] = slice.maxPage;
+              _sourceTotals[key] = slice.total;
+              results[key] = slice;
+            });
+          }).catchError((e) {
+            debugPrint('SearchPage $key loadMore error: $e');
+          }),
+        );
+      }
+      if (tasks.isEmpty) continue;
+      await Future.wait(tasks);
+      if (!mounted || _searchQuery != keyword) return;
+      setState(() {
+        _appendAllSources(results, group);
+        _offset = _comics.length;
+      });
     }
-    if (tasks.isEmpty) return;
-    await Future.wait(tasks);
   }
 
   Future<void> _loadComics({bool reset = true}) async {
@@ -365,9 +485,7 @@ class _SearchPageState extends State<SearchPage> {
               _sourceMaxPages[key] = slice.maxPage;
               _sourceTotals[key] = slice.total;
               _comics.addAll(slice.comics);
-              _sourceLabels.addAll(
-                List.filled(slice.comics.length, _sourceName(key)),
-              );
+              _sourceLabels.addAll(slice.labels);
               _offset = _comics.length;
               _total = slice.maxPage * 20;
             });
@@ -427,7 +545,7 @@ class _SearchPageState extends State<SearchPage> {
       _sourcePages.clear();
       _sourceMaxPages.clear();
       _sourceTotals.clear();
-      _sourceFilter = 'hot'; // 标签浏览始终使用热辣源
+      _sourceFilter = 'hotcopy'; // 标签浏览后搜索使用 热辣·拷贝 合并源
     });
     if (next != null) {
       _loadComics();
