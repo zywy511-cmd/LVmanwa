@@ -244,6 +244,112 @@ class Waman3Source extends ThirdPartyComicSource {
     );
   }
 
+  // ── 漫画详情 / 章节 / 图片 ──
+
+  @override
+  Future<ThirdPartyComicDetail> loadInfo(String comicId) async {
+    final data = await fetchApi(
+      '/api/detail/index',
+      params: {'id': comicId},
+    );
+    if (data['code'] != 1) {
+      throw '漫屋3 详情加载失败: ${data['msg'] ?? ''}';
+    }
+    final root = data['data'];
+    if (root is! Map<String, dynamic>) {
+      throw '漫屋3 详情数据异常';
+    }
+    final chapterList = root['chapter_list'];
+    final chapters = <ThirdPartyChapter>[];
+    if (chapterList is List) {
+      final sorted = chapterList.whereType<Map<String, dynamic>>().toList()
+        ..sort((a, b) => ((a['sort'] as num?)?.toInt() ?? 0)
+            .compareTo((b['sort'] as num?)?.toInt() ?? 0));
+      for (final ch in sorted) {
+        final chId = '${ch['id'] ?? ''}';
+        if (chId.isEmpty) continue;
+        chapters.add(ThirdPartyChapter(id: chId, name: '${ch['name'] ?? ''}'));
+      }
+    }
+    final authors = <String>[];
+    final authorText = '${root['author'] ?? ''}'.trim();
+    if (authorText.isNotEmpty) {
+      authors.addAll(
+        authorText
+            .split(RegExp(r'[/、,，]'))
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty),
+      );
+    }
+    final tags = <String>[];
+    final rawTags = root['tags'];
+    if (rawTags is List) {
+      for (final t in rawTags) {
+        if (t is Map) {
+          final name = '${t['name'] ?? ''}'.trim();
+          if (name.isNotEmpty) tags.add(name);
+        }
+      }
+    }
+    final state = '${root['state'] ?? ''}'.trim();
+    if (state.isNotEmpty) tags.add('状态: $state');
+    final area = '${root['book_area'] ?? ''}'.trim();
+    if (area.isNotEmpty) tags.add('地区: $area');
+    final category = '${root['category_name'] ?? ''}'.trim();
+    if (category.isNotEmpty) tags.add('分类: $category');
+
+    return ThirdPartyComicDetail(
+      title: '${root['name'] ?? ''}',
+      cover: '${root['picx'] ?? ''}',
+      description: '${root['text'] ?? ''}',
+      authors: authors,
+      tags: tags,
+      statusDisplay: state.isEmpty ? null : state,
+      updateTime: '${root['last_time'] ?? ''}',
+      chapters: chapters,
+    );
+  }
+
+  @override
+  Future<List<String>> loadEp(String comicId, String epId) async {
+    final data = await fetchApi(
+      '/api/chapters/index',
+      params: {'id': epId, 'img_host': 0},
+    );
+    if (data['code'] != 1) {
+      throw '漫屋3 章节加载失败: ${data['msg'] ?? ''}';
+    }
+    final root = data['data'];
+    final piclist = root is Map<String, dynamic> ? root['piclist'] : null;
+    if (piclist is! List) return const [];
+    return piclist
+        .whereType<Map<String, dynamic>>()
+        .map((pic) => '${pic['pic'] ?? ''}')
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  ThirdPartyImageRequest? imageRequest(String url) {
+    final base = baseUrl;
+    return ThirdPartyImageRequest(
+      headers: {
+        'User-Agent': userAgent,
+        'Referer': '$base/',
+      },
+      decryptor: (bytes) {
+        if (ThirdPartyComicSource.isPlainImage(bytes)) return bytes;
+        final keyBytes = Uint8List.fromList(utf8.encode(imageSecretKey));
+        final decrypted = ThirdPartyComicSource.probeOrDecryptCbc(
+          bytes,
+          key: keyBytes,
+          iv: keyBytes,
+        );
+        return ThirdPartyComicSource.stripPkcs7(decrypted);
+      },
+    );
+  }
+
   // ── 节点测速（设置页使用）──
 
   /// 对全部候选节点测速，返回 (url, 延迟ms) 升序列表。

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:material3_expressive_loading_indicator/material3_expressive_loading_indicator.dart';
 
 import '../api/api_client.dart';
+import '../api/third_party/third_party_source.dart';
 import '../l10n/app_localizations.dart';
 import '../models/chapter.dart';
 import '../models/comic.dart' as comic_model;
@@ -22,6 +23,7 @@ import '../utils/time_format.dart';
 import '../utils/toast.dart';
 import '../widgets/comic_hero_tags.dart';
 import 'comic_comments_sheet.dart';
+import 'third_party_comic_detail_page.dart';
 
 class ComicDetailPage extends StatefulWidget {
   final String pathWord;
@@ -110,6 +112,11 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   @override
   void initState() {
     super.initState();
+    // 第三方漫源（漫屋3/漫屋吧）详情由 ThirdPartyComicDetailPage 接管，
+    // 不走 COPY 的详情/章节/收藏数据链路。
+    if (ThirdPartyComicSource.sourceKeyOfPathWord(widget.pathWord) != null) {
+      return;
+    }
     _comic = widget.initialComic;
     _loadingComic = widget.initialComic == null;
     _officialLastBrowseId = widget.lastBrowseId;
@@ -763,6 +770,14 @@ class _ComicDetailPageState extends State<ComicDetailPage> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+
+    // 第三方漫源（漫屋3/漫屋吧）：走独立轻量详情页。
+    if (ThirdPartyComicSource.sourceKeyOfPathWord(widget.pathWord) != null) {
+      return ThirdPartyComicDetailPage(
+        pathWord: widget.pathWord,
+        initialComic: widget.initialComic,
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(title: Text(_comic?.name ?? '')),

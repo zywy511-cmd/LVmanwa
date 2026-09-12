@@ -20,9 +20,9 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/cover_brightness_filter.dart';
 import '../utils/time_format.dart';
-import '../utils/toast.dart';
 import '../widgets/comic_card_surface.dart';
 import '../widgets/comic_hero_tags.dart';
+import '../widgets/third_party_image.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   const HomePage({super.key});
@@ -231,15 +231,16 @@ class _HomePageState extends ConsumerState<HomePage> {
   }
 
   void _openComic(Comic comic, String heroTagBase) {
-    // 第三方漫源详情/阅读尚未接入，先提示
-    if (ThirdPartyComicSource.sourceKeyOfPathWord(comic.pathWord) != null) {
-      showToast(context, '「${comic.name}」详情与阅读功能将在后续版本接入');
-      return;
-    }
+    // 第三方漫源详情页无 Hero 组件，跳过飞行动画避免异常。
+    final isThirdParty =
+        ThirdPartyComicSource.sourceKeyOfPathWord(comic.pathWord) != null;
     context.pushNamed(
       AppRoutes.comicDetail,
       pathParameters: {'pathWord': comic.pathWord},
-      extra: ComicDetailExtra(initialComic: comic, heroTagBase: heroTagBase),
+      extra: ComicDetailExtra(
+        initialComic: comic,
+        heroTagBase: isThirdParty ? null : heroTagBase,
+      ),
     );
   }
 
@@ -1614,33 +1615,11 @@ class ComicCard extends StatelessWidget {
               ComicHeroTags.cover,
               ComicCardSurface(
                 child: CoverBrightnessFilter(
-                  child: CachedNetworkImage(
-                    imageUrl: comic.cover,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                    fadeInDuration: Duration.zero,
-                    fadeOutDuration: Duration.zero,
-                    placeholder: (_, _) => Container(
-                      color: cs.surfaceContainerHighest,
-                      child: Center(
-                        child: Icon(
-                          Icons.image,
-                          color: cs.onSurfaceVariant,
-                          size: 32,
-                        ),
-                      ),
+                  child: TpAwareImage(
+                    sourceKey: ThirdPartyComicSource.sourceKeyOfPathWord(
+                      comic.pathWord,
                     ),
-                    errorWidget: (_, _, _) => Container(
-                      color: cs.surfaceContainerHighest,
-                      child: Center(
-                        child: Icon(
-                          Icons.broken_image,
-                          color: cs.onSurfaceVariant,
-                          size: 32,
-                        ),
-                      ),
-                    ),
+                    url: comic.cover,
                   ),
                 ),
               ),

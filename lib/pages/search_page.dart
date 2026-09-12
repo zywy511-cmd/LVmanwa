@@ -18,7 +18,6 @@ import '../repositories/search_init_repository.dart';
 import '../routing/app_router.dart';
 import '../theme/app_spacing.dart';
 import '../utils/cover_brightness_filter.dart';
-import '../utils/toast.dart';
 import '../widgets/comic_card_skeleton.dart';
 import '../widgets/comic_hero_tags.dart';
 import 'home_page.dart' show ComicCard;
@@ -756,20 +755,18 @@ class _SearchPageState extends State<SearchPage> {
                 hp: hp,
                 loadingMore: _loadingMore,
                 onOpen: (comic, heroTagBase) {
-                  // 第三方漫源详情/阅读尚未接入，先提示
-                  if (ThirdPartyComicSource.sourceKeyOfPathWord(
+                  // 第三方漫源详情页无 Hero 组件，跳过飞行动画避免异常。
+                  final isThirdParty =
+                      ThirdPartyComicSource.sourceKeyOfPathWord(
                         comic.pathWord,
                       ) !=
-                      null) {
-                    showToast(context, '「${comic.name}」详情与阅读功能将在后续版本接入');
-                    return;
-                  }
+                      null;
                   context.pushNamed(
                     AppRoutes.comicDetail,
                     pathParameters: {'pathWord': comic.pathWord},
                     extra: ComicDetailExtra(
                       initialComic: comic,
-                      heroTagBase: heroTagBase,
+                      heroTagBase: isThirdParty ? null : heroTagBase,
                     ),
                   );
                 },

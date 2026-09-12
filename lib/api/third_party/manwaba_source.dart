@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../../models/comic.dart';
@@ -263,6 +266,149 @@ class ManwabaSource extends ThirdPartyComicSource {
     return ThirdPartySearchResult(
       comics: list,
       maxPage: pageSize <= 0 ? 1 : (total / pageSize).ceil(),
+    );
+  }
+
+  // ── 漫画详情 / 章节 / 图片 ──
+
+  @override
+  Future<ThirdPartyComicDetail> loadInfo(String comicId) async {
+    final data = await _fetchJson('$api/comic/$comicId');
+    if (data['code'] != 200) {
+      throw '漫屋吧 详情加载失败: ${data['message'] ?? ''}';
+    }
+    final root = data['data'];
+    if (root is! Map<String, dynamic>) {
+      throw '漫屋吧 详情数据异常';
+    }
+    // 章节列表：先取总数，再全量拉取
+    final chapterId = '${root['id'] ?? ''}';
+    var chapters = <ThirdPartyChapter>[];
+    if (chapterId.isNotEmpty) {
+      final pageRes = await _fetchJson(
+        '$api/comic/chapter',
+        params: {'comicId': chapterId, 'page': 1, 'pageSize': 1},
+      );
+      final pagination = pageRes['pagination'];
+      final total = pagination is Map
+          ? (pagination['total'] as num?)?.toInt() ?? 0
+          : 0;
+      if (total > 0) {
+        final chapterRes = await _fetchJson(
+          '$api/comic/chapter',
+          params: {
+            'comicId': chapterId,
+            'page': 1,
+            'pageSize': total,
+          },
+        );
+        final list = chapterRes['data'];
+        if (list is List) {
+          chapters = list
+              .whereType<Map<String, dynamic>>()
+              .map(
+                (item) => ThirdPartyChapter(
+                  id: '${item['id'] ?? ''}',
+                  name: '${item['title'] ?? ''}',
+                ),
+              )
+              .where((c) => c.id.isNotEmpty)
+              .toList();
+        }
+      }
+    }
+    final statusNum = root['status'];
+    final statusDisplay = statusNum == 0
+        ? '连载中'
+        : (statusNum == 1 ? '已完结' : null);
+    return ThirdPartyComicDetail(
+      title: '${root['title'] ?? ''}',
+      cover: normalizeImageUrl('${root['cover'] ?? ''}'),
+      description: '${root['intro'] ?? ''}',
+      authors: '${root['author'] ?? ''}'
+          .split(RegExp(r'[/、,，]'))
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      tags: '${root['tags'] ?? ''}'
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty)
+          .toList(),
+      statusDisplay: statusDisplay,
+      updateTime: root['editTime'] is num
+          ? _formatTimestamp((root['editTime'] as num).toInt())
+          : null,
+      chapters: chapters,
+    );
+  }
+
+  String _formatTimestamp(int seconds) {
+    final dt = DateTime.fromMillisecondsSinceEpoch(seconds * 1000);
+    final y = dt.year;
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  @override
+  Future<List<String>> loadEp(String comicId, String epId) async {
+    final imgApi = '$api/comic/image/$epId';
+    final params = {
+      'page': 1,
+      'pageSize': 1,
+      // 参数名必须用 image_source（下划线），旧 imageSource（驼峰）会被服务端忽略
+      'image_source': imageSource,
+    };
+    final first = await _fetchJson(imgApi, params: params);
+    final pagination = first['data'] is Map
+        ? (first['data'] as Map)['pagination']
+        : null;
+    final total = pagination is Map
+        ? (pagination['total'] as num?)?.toInt() ?? 0
+        : 0;
+    if (total <= 0) return const [];
+    final full = await _fetchJson(
+      imgApi,
+      params: {
+        'page': 1,
+        'page_size': total,
+        'image_source': imageSource,
+      },
+    );
+    final images = full['data'] is Map
+        ? (full['data'] as Map)['images']
+        : null;
+    if (images is! List) return const [];
+    return images
+        .whereType<Map<String, dynamic>>()
+        .map((item) => normalizeImageUrl('${item['url'] ?? ''}'))
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
+  @override
+  ThirdPartyImageRequest? imageRequest(String url) {
+    return ThirdPartyImageRequest(
+      headers: {'User-Agent': userAgent},
+      decryptor: (bytes) {
+        if (ThirdPartyComicSource.isPlainImage(bytes)) return bytes;
+        if (bytes.length < 32) return bytes;
+        // key = '0B6666A0-BB59-1381-B746-a0E4C9AC' 的 UTF-8 前 32 字节
+        // IV = 密文前 16 字节；密文 = 剩余部分
+        const keyText = '0B6666A0-BB59-1381-B746-a0E4C9AC';
+        final keyBytes = Uint8List.fromList(utf8.encode(keyText));
+        final key = keyBytes.length > 32
+            ? Uint8List.sublistView(keyBytes, 0, 32)
+            : keyBytes;
+        final iv = Uint8List.sublistView(bytes, 0, 16);
+        final cipher = Uint8List.sublistView(bytes, 16);
+        final decrypted =
+            ThirdPartyComicSource.aesCbcDecrypt(cipher, key, iv);
+        final unpadded = ThirdPartyComicSource.stripPkcs7(decrypted);
+        if (ThirdPartyComicSource.isPlainImage(unpadded)) return unpadded;
+        return bytes;
+      },
     );
   }
 
