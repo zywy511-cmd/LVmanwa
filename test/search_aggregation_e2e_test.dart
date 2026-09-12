@@ -27,8 +27,8 @@ void main() {
 
   test('热辣/拷贝同源：合并去重后条数不膨胀、标题高度重叠', () async {
     final api = ApiClient();
-    final hot = await api.manga.searchComics('火影', limit: 20, offset: 0);
-    final copy = await api.manga.searchCopyComics('火影', limit: 20, offset: 0);
+    final hot = await api.manga.searchComics('火影');
+    final copy = await api.manga.searchCopyComics('火影');
     expect(hot.list, isNotEmpty, reason: '热辣应有结果');
     expect(copy.list, isNotEmpty, reason: '拷贝应有结果');
 
@@ -53,13 +53,13 @@ void main() {
         .where((c) => hotTitles.contains(c.name.trim()))
         .length;
     // ignore: avoid_print
-    print('拷贝与热辣标题重叠 ${overlap}/${copy.list.length}');
+    print('拷贝与热辣标题重叠 $overlap/${copy.list.length}');
     expect(mergedTitles.length, lessThanOrEqualTo(hot.list.length + copy.list.length));
   }, timeout: const Timeout(Duration(minutes: 3)));
 
   test('四个源同关键词均可返回结果（全部模式拼接前提）', () async {
     final api = ApiClient();
-    final hot = await api.manga.searchComics('火影', limit: 20, offset: 0);
+    final hot = await api.manga.searchComics('火影');
     final waman3 = await Waman3Source.instance.search('火影', 1);
     final manwaba = await ManwabaSource.instance.search('火影', 1);
     expect(hot.list, isNotEmpty);

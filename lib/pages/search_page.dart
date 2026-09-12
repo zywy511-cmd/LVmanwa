@@ -68,7 +68,6 @@ class _SearchPageState extends State<SearchPage> {
   final Map<String, int> _sourceTotals = {}; // 每源总条数
   final List<String> _sourceLabels = []; // 与 _comics 逐项对齐的来源名
   int _pendingSearches = 0; // 「全部」模式并行首查未完成数
-  final Set<String> _seenTitles = {}; // 「全部」模式跨源去重（标题）
 
   // 「全部」模式优先级：热辣/拷贝 优先展示，其次漫屋3、漫屋吧
   static const _allPrimary = ['hot', 'copy'];
@@ -274,14 +273,17 @@ class _SearchPageState extends State<SearchPage> {
     );
   }
 
-  /// 「全部」模式：按 [order] 顺序把已完成的源结果追加进列表（跨源去重）。
+  /// 「全部」模式：按 [order] 顺序把已完成的源结果追加进列表。
+  /// 去重仅在本次追加的组内进行（热辣/拷贝间去重）；
+  /// 漫屋3/漫屋吧 结果完整展示，不与热辣/拷贝互相过滤。
   void _appendAllSources(Map<String, _SourceSlice> results, List<String> order) {
+    final seen = <String>{};
     for (final key in order) {
       final slice = results[key];
       if (slice == null) continue;
       for (var i = 0; i < slice.comics.length; i++) {
         final t = slice.comics[i].name.trim();
-        if (t.isEmpty || !_seenTitles.add(t)) continue;
+        if (t.isEmpty || !seen.add(t)) continue;
         _comics.add(slice.comics[i]);
         _sourceLabels.add(slice.labels[i]);
       }
@@ -294,7 +296,6 @@ class _SearchPageState extends State<SearchPage> {
     _sourcePages.clear();
     _sourceMaxPages.clear();
     _sourceTotals.clear();
-    _seenTitles.clear();
     if (_sourceFilter == 'all') {
       const all = [..._allPrimary, ..._allSecondary];
       _pendingSearches = all.length;
@@ -306,8 +307,11 @@ class _SearchPageState extends State<SearchPage> {
         }
       }
 
+      // 次级组（漫屋3/漫屋吧）必须等热辣/拷贝全部完成后才渲染，
+      // 保证列表顶部始终是热辣/拷贝的结果（不受接口返回快慢影响）。
       void settleSecondary() {
-        if (secondaryResults.length == _allSecondary.length) {
+        if (primaryResults.length == _allPrimary.length &&
+            secondaryResults.length == _allSecondary.length) {
           _appendAllSources(secondaryResults, _allSecondary);
         }
       }
