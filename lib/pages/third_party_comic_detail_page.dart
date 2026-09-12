@@ -82,11 +82,14 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
     }
   }
 
-  void _openReader(List<ThirdPartyChapter> chapters, int index,
-      {int page = 1}) {
+  Future<void> _openReader(
+    List<ThirdPartyChapter> chapters,
+    int index, {
+    int page = 1,
+  }) async {
     final source = _source;
     if (source == null || chapters.isEmpty) return;
-    Navigator.of(context).push(
+    await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ThirdPartyReaderPage(
           sourceKey: source.key,
@@ -98,10 +101,18 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
         ),
       ),
     );
+    // 从阅读器返回后刷新本地进度（断点续读入口随之更新）
+    if (!mounted) return;
+    final progress = await ThirdPartyReadingProgress.read(
+      source.key,
+      _comicId,
+    );
+    if (!mounted) return;
+    setState(() => _progress = progress);
   }
 
   /// 点「开始/继续阅读」：有进度从断点继续，否则从第一话开始。
-  void _openPrimaryReader() {
+  Future<void> _openPrimaryReader() async {
     final detail = _detail;
     if (detail == null || detail.chapters.isEmpty) return;
     final p = _progress;
@@ -109,7 +120,39 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
         ? p.chapterIndex
         : 0;
     final page = (p != null && p.chapterIndex == index) ? p.page : 1;
-    _openReader(detail.chapters, index, page: page);
+    await _openReader(detail.chapters, index, page: page);
+  }
+
+  /// 右下角「继续阅读」FAB 文案（对齐拷贝/热辣样式）。
+  String _continueReadingLabel() {
+    final p = _progress;
+    if (p == null) return '开始阅读';
+    final name = p.chapterName.length > 10
+        ? '${p.chapterName.substring(0, 10)}…'
+        : p.chapterName;
+    if (p.totalPages > 1) return '$name · ${p.page}/${p.totalPages}';
+    return name;
+  }
+
+  /// 右下角 FAB：仅在有阅读进度时显示。
+  Widget _buildContinueFab() {
+    final hasProgress = _progress != null &&
+        _detail != null &&
+        _progress!.chapterIndex < _detail!.chapters.length;
+    if (!hasProgress) return const SizedBox.shrink();
+    return Positioned(
+      right: 16,
+      bottom: 16,
+      child: FloatingActionButton.extended(
+        heroTag: 'tp_continue_reading',
+        onPressed: _openPrimaryReader,
+        icon: const Icon(Icons.play_arrow, size: 20),
+        label: Text(
+          _continueReadingLabel(),
+          style: const TextStyle(fontSize: 13),
+        ),
+      ),
+    );
   }
 
   @override
@@ -142,7 +185,12 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
                     ],
                   ),
                 )
-              : _buildContent(cs, tt),
+              : Stack(
+                  children: [
+                    _buildContent(cs, tt),
+                    _buildContinueFab(),
+                  ],
+                ),
     );
   }
 

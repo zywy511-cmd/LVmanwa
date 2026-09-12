@@ -17,8 +17,8 @@ import '../widgets/third_party_image.dart';
 /// 第三方漫源（漫屋3/漫屋吧）阅读器，交互与拷贝漫画阅读器保持一致：
 /// - 点击画面切换上下黑边控制栏（顶部：返回+章节名；底部：进度条+章节/设置）
 /// - 支持滚动 / 翻页两种阅读模式（设置与拷贝漫画共享，持久化于 UserManager）
-/// - 翻页模式支持左右点击翻页、左右/上下翻页方向
-/// - 阅读进度自动本地保存，详情页「继续阅读」断点续读
+/// - 连续阅读：开启后翻到章节末尾自动拼接下一话，无需手动切换（默认开启）
+/// - 阅读进度自动本地保存（记录到章节 + 话内页码），详情页「继续阅读」断点续读
 class ThirdPartyReaderPage extends StatefulWidget {
   final String sourceKey;
   final String comicId;
@@ -41,25 +41,47 @@ class ThirdPartyReaderPage extends StatefulWidget {
   State<ThirdPartyReaderPage> createState() => _ThirdPartyReaderPageState();
 }
 
+/// 连续阅读链中的一章：章节引用 + 已加载图片 + 在章节列表中的下标。
+class _TpChainChapter {
+  const _TpChainChapter({
+    required this.chapter,
+    required this.images,
+    required this.globalIndex,
+  });
+
+  final ThirdPartyChapter chapter;
+  final List<String> images;
+  final int globalIndex;
+}
+
 class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
   ThirdPartyComicSource? get _source =>
       ThirdPartySources.byKey(widget.sourceKey);
 
   final _user = UserManager();
 
-  late int _index = widget.initialIndex.clamp(0, widget.chapters.length - 1);
-  List<String> _images = [];
+  // 连续阅读链：跨话拼接图片，_chainIndex 指向当前所在章节
+  List<_TpChainChapter> _chain = [];
+  int _chainIndex = 0;
+  List<String> _flat = [];
+  bool _loadingNext = false;
+
   bool _loading = true;
   String? _error;
   bool _showToolbar = false;
-  int _page = 1;
+  int _page = 1; // 全局图片页码（1-based）
   bool _isDraggingSlider = false;
 
   final PageController _pageController = PageController();
   final ScrollController _scrollController = ScrollController();
   Timer? _autoHideTimer;
 
-  ThirdPartyChapter get _chapter => widget.chapters[_index];
+  int get _indexSafe =>
+      widget.initialIndex.clamp(0, widget.chapters.length - 1);
+
+  ThirdPartyChapter get _chapter => _chain.isEmpty
+      ? widget.chapters[_indexSafe]
+      : _chain[_chainIndex].chapter;
 
   bool get _isPageMode => _user.readerMode == 1;
 
@@ -67,7 +89,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
   void initState() {
     super.initState();
     _page = widget.initialPage;
-    _loadChapter(initialPage: widget.initialPage);
+    _loadSingleChapter(_indexSafe, page: widget.initialPage);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
   }
 
@@ -83,7 +105,22 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
     super.dispose();
   }
 
-  Future<void> _loadChapter({int initialPage = 1}) async {
+  /// 合并链中所有图片为全局图片列表。
+  void _rebuildFlat() {
+    _flat = [for (final c in _chain) ...c.images];
+  }
+
+  /// 第 [ci] 章在全局图片列表中的起始索引（0-based）。
+  int _chapterStart(int ci) {
+    var s = 0;
+    for (var i = 0; i < ci && i < _chain.length; i++) {
+      s += _chain[i].images.length;
+    }
+    return s;
+  }
+
+  /// 整章加载：清空链，只保留 [globalIndex] 这一话。
+  Future<void> _loadSingleChapter(int globalIndex, {int page = 1}) async {
     final source = _source;
     if (source == null) {
       setState(() {
@@ -92,21 +129,30 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
       });
       return;
     }
+    final chapter = widget.chapters[globalIndex];
     setState(() {
       _loading = true;
       _error = null;
-      _images = [];
+      _chain = [];
+      _flat = [];
+      _chainIndex = 0;
     });
     try {
-      final images = await source.loadEp(widget.comicId, _chapter.id);
+      final images = await source.loadEp(widget.comicId, chapter.id);
       if (!mounted) return;
       setState(() {
-        _images = images;
-        _page = images.isEmpty ? 1 : initialPage.clamp(1, images.length);
+        _chain = [
+          _TpChainChapter(
+            chapter: chapter,
+            images: images,
+            globalIndex: globalIndex,
+          ),
+        ];
+        _rebuildFlat();
+        _page = images.isEmpty ? 1 : page.clamp(1, images.length);
         _loading = false;
         if (images.isEmpty) _error = '本章暂无图片';
       });
-      // 翻页模式直接跳转初始页
       if (images.isNotEmpty && _isPageMode && _pageController.hasClients) {
         _pageController.jumpToPage(_page - 1);
       }
@@ -117,6 +163,53 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
         _loading = false;
         _error = e.toString();
       });
+    }
+  }
+
+  /// 连续阅读：在链尾追加下一话。
+  Future<void> _appendNext() async {
+    if (_loadingNext || _chain.isEmpty) return;
+    final last = _chain.last;
+    final nextGlobal = last.globalIndex + 1;
+    if (nextGlobal >= widget.chapters.length) return;
+    final source = _source;
+    if (source == null) return;
+    _loadingNext = true;
+    try {
+      final nextChapter = widget.chapters[nextGlobal];
+      final images = await source.loadEp(widget.comicId, nextChapter.id);
+      if (!mounted) return;
+      if (images.isEmpty) {
+        _loadingNext = false;
+        return;
+      }
+      setState(() {
+        _chain.add(
+          _TpChainChapter(
+            chapter: nextChapter,
+            images: images,
+            globalIndex: nextGlobal,
+          ),
+        );
+        _rebuildFlat();
+        _loadingNext = false;
+      });
+    } catch (_) {
+      _loadingNext = false;
+    }
+  }
+
+  /// 根据全局页码同步当前章节（用于顶部章节名与进度记录）。
+  void _syncChapterFromPage(int page) {
+    var acc = 0;
+    for (var ci = 0; ci < _chain.length; ci++) {
+      acc += _chain[ci].images.length;
+      if (page <= acc) {
+        if (ci != _chainIndex) {
+          setState(() => _chainIndex = ci);
+        }
+        return;
+      }
     }
   }
 
@@ -139,11 +232,12 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
     }
   }
 
+  /// 整章切换上一话/下一话（基于当前所在章节）。
   Future<void> _switchChapter(int delta) async {
-    final next = _index + delta;
+    final cur = _chain.isEmpty ? _indexSafe : _chain[_chainIndex].globalIndex;
+    final next = cur + delta;
     if (next < 0 || next >= widget.chapters.length) return;
-    setState(() => _index = next);
-    await _loadChapter();
+    await _loadSingleChapter(next);
   }
 
   void _goPage(int page) {
@@ -152,9 +246,9 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
       final max = _scrollController.hasClients
           ? _scrollController.position.maxScrollExtent
           : 0.0;
-      final target = max == 0 || _images.length <= 1
+      final target = max == 0 || _flat.length <= 1
           ? 0.0
-          : ((page - 1) / (_images.length - 1)).clamp(0.0, 1.0) * max;
+          : ((page - 1) / (_flat.length - 1)).clamp(0.0, 1.0) * max;
       _scrollController.jumpTo(target);
       return;
     }
@@ -164,21 +258,33 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
   }
 
   Future<void> _saveProgress() async {
+    if (_chain.isEmpty) return;
+    final start = _chapterStart(_chainIndex);
+    final inChapterPage =
+        (_page - start).clamp(1, _chain[_chainIndex].images.length);
     await ThirdPartyReadingProgress.save(
       sourceKey: widget.sourceKey,
       comicId: widget.comicId,
-      chapterIndex: _index,
-      page: _page,
-      totalPages: _images.length,
-      chapterName: _chapter.name,
+      chapterIndex: _chain[_chainIndex].globalIndex,
+      page: inChapterPage,
+      totalPages: _chain[_chainIndex].images.length,
+      chapterName: _chain[_chainIndex].chapter.name,
     );
   }
 
-  /// 图片页变化（翻页/滚动）时更新页码并保存进度。
+  /// 图片页变化（翻页/滚动）时更新页码、同步章节并保存进度。
   void _onPageChanged(int page) {
     if (page == _page) return;
     setState(() => _page = page);
+    _syncChapterFromPage(page);
     unawaited(_saveProgress());
+    // 连续阅读：翻到链尾自动追加下一话
+    if (_user.readerContinuousReading &&
+        page == _flat.length &&
+        _chain.isNotEmpty &&
+        _chain.last.globalIndex < widget.chapters.length - 1) {
+      unawaited(_appendNext());
+    }
   }
 
   void _showSettings() {
@@ -195,7 +301,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
           setState(() {});
           // 阅读模式切换后重建视图
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || _images.isEmpty) return;
+            if (!mounted || _flat.isEmpty) return;
             if (_isPageMode && _pageController.hasClients) {
               _pageController.jumpToPage(_page - 1);
             }
@@ -210,6 +316,8 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     final cs = Theme.of(context).colorScheme;
     final tt = Theme.of(context).textTheme;
+    final currentGlobal =
+        _chain.isEmpty ? _indexSafe : _chain[_chainIndex].globalIndex;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: cs.surface,
@@ -235,7 +343,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                 itemCount: widget.chapters.length,
                 itemBuilder: (context, i) {
                   final ch = widget.chapters[i];
-                  final isCurrent = i == _index;
+                  final isCurrent = i == currentGlobal;
                   return ListTile(
                     dense: true,
                     leading: Icon(
@@ -243,9 +351,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                           ? Icons.radio_button_checked
                           : Icons.radio_button_off,
                       size: 18,
-                      color: isCurrent
-                          ? cs.primary
-                          : cs.onSurfaceVariant,
+                      color: isCurrent ? cs.primary : cs.onSurfaceVariant,
                     ),
                     title: Text(
                       ch.name,
@@ -258,8 +364,8 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                     ),
                     onTap: () {
                       Navigator.of(sheetContext).pop();
-                      setState(() => _index = i);
-                      _loadChapter();
+                      if (i == currentGlobal) return;
+                      _loadSingleChapter(i);
                     },
                   );
                 },
@@ -297,19 +403,19 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
               ),
             ),
           // 状态显示（时间/电量/网络/页码）
-          if (_user.reader.statusOverlay && !_loading && _images.isNotEmpty)
+          if (_user.reader.statusOverlay && !_loading && _flat.isNotEmpty)
             Positioned(
               top: 0,
               right: 0,
               child: ReaderStatusOverlay(
                 currentPage: _page,
-                totalPages: _images.length,
+                totalPages: _flat.length,
               ),
             ),
           // ── 顶部控制栏 ──
           _buildTopBar(),
           // ── 底部控制栏 ──
-          if (!_loading && _images.isNotEmpty) _buildBottomBar(),
+          if (!_loading && _flat.isNotEmpty) _buildBottomBar(),
         ],
       ),
     );
@@ -336,7 +442,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
           ),
           const SizedBox(height: 16),
           FilledButton.tonal(
-            onPressed: () => _loadChapter(),
+            onPressed: () => _loadSingleChapter(_indexSafe),
             child: const Text('重试'),
           ),
         ],
@@ -360,7 +466,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
       controller: _pageController,
       scrollDirection: vertical ? Axis.vertical : Axis.horizontal,
       reverse: direction == 1 && !vertical,
-      itemCount: _images.length,
+      itemCount: _flat.length,
       onPageChanged: (page) => _onPageChanged(page + 1),
       itemBuilder: (context, i) {
         return GestureDetector(
@@ -370,7 +476,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
           child: Center(
             child: TpAwareImage(
               sourceKey: widget.sourceKey,
-              url: _images[i],
+              url: _flat[i],
               fit: BoxFit.contain,
             ),
           ),
@@ -392,16 +498,22 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
           curve: Curves.easeOut,
         );
       } else {
-        _switchChapter(-1);
+        // 链首向前：连续阅读时切上一话
+        if (_user.readerContinuousReading) {
+          _switchChapter(-1);
+        }
       }
     } else if (p > len * 2 / 3) {
-      if (i < _images.length - 1) {
+      if (i < _flat.length - 1) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOut,
         );
       } else {
-        _switchChapter(1);
+        // 链尾向后：连续阅读时 onPageChanged 已触发自动追加
+        if (!_user.readerContinuousReading) {
+          _switchChapter(1);
+        }
       }
     }
   }
@@ -409,12 +521,18 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
   Widget _buildScrollMode() {
     return ListView.builder(
       controller: _scrollController,
-      itemCount: _images.length,
-      // 滚动到底更新进度
+      itemCount: _flat.length,
       itemBuilder: (context, i) {
+        // 滚动接近末尾时预加载下一话（连续阅读）
+        if (_user.readerContinuousReading &&
+            i >= _flat.length - 2 &&
+            _chain.isNotEmpty &&
+            _chain.last.globalIndex < widget.chapters.length - 1) {
+          unawaited(_appendNext());
+        }
         return _ScrollPageImage(
           sourceKey: widget.sourceKey,
-          url: _images[i],
+          url: _flat[i],
           isVisible: (visible) {
             if (visible && i + 1 != _page) _onPageChanged(i + 1);
           },
@@ -485,6 +603,9 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
   }
 
   Widget _buildBottomBar() {
+    final hasPrev = _chainIndex > 0 || _chain[_chainIndex].globalIndex > 0;
+    final hasNext =
+        _chain[_chainIndex].globalIndex < widget.chapters.length - 1;
     return Positioned(
       bottom: 0,
       left: 0,
@@ -532,12 +653,13 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                             child: Slider(
                               value: _page.toDouble().clamp(
                                 1,
-                                _images.length.toDouble(),
+                                _flat.length.toDouble(),
                               ),
                               min: 1,
-                              max: _images.length.toDouble(),
-                              divisions:
-                                  _images.length > 1 ? _images.length - 1 : null,
+                              max: _flat.length.toDouble(),
+                              divisions: _flat.length > 1
+                                  ? _flat.length - 1
+                                  : null,
                               onChangeStart: (_) => _isDraggingSlider = true,
                               onChangeEnd: (_) {
                                 _isDraggingSlider = false;
@@ -551,7 +673,7 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                           ),
                         ),
                         Text(
-                          '${_images.length}',
+                          '${_flat.length}',
                           style: const TextStyle(
                             color: ReaderChrome.onSurfaceMuted,
                             fontSize: 12,
@@ -566,12 +688,11 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                         IconButton(
                           icon: Icon(
                             Icons.skip_previous,
-                            color: _index > 0
+                            color: hasPrev
                                 ? ReaderChrome.onSurface
                                 : ReaderChrome.onSurfaceFaint,
                           ),
-                          onPressed:
-                              _index > 0 ? () => _switchChapter(-1) : null,
+                          onPressed: hasPrev ? () => _switchChapter(-1) : null,
                           tooltip: '上一话',
                         ),
                         IconButton(
@@ -596,13 +717,11 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
                         IconButton(
                           icon: Icon(
                             Icons.skip_next,
-                            color: _index < widget.chapters.length - 1
+                            color: hasNext
                                 ? ReaderChrome.onSurface
                                 : ReaderChrome.onSurfaceFaint,
                           ),
-                          onPressed: _index < widget.chapters.length - 1
-                              ? () => _switchChapter(1)
-                              : null,
+                          onPressed: hasNext ? () => _switchChapter(1) : null,
                           tooltip: '下一话',
                         ),
                       ],
@@ -789,6 +908,18 @@ class _TpReaderSettingsSheetState extends State<_TpReaderSettingsSheet> {
                     ),
                   ),
                 ],
+                // 连续阅读
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(l10n.readerContinuousReading),
+                  subtitle: Text(l10n.readerContinuousReadingDesc),
+                  value: _user.readerContinuousReading,
+                  onChanged: (v) {
+                    _user.setReaderContinuousReading(v);
+                    setState(() {});
+                    widget.onChanged();
+                  },
+                ),
                 // 显示
                 _sectionHeader(l10n.readerDisplaySection, cs, tt),
                 SwitchListTile(
