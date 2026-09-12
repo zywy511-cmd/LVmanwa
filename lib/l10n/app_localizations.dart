@@ -1762,7 +1762,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkApiRouteTitle.
   ///
   /// In zh, this message translates to:
-  /// **'API 线路'**
+  /// **'API 连接线'**
   String get networkApiRouteTitle;
 
   /// No description provided for @networkSelectionMode.
@@ -1774,43 +1774,43 @@ abstract class AppLocalizations {
   /// No description provided for @networkModeRoute.
   ///
   /// In zh, this message translates to:
-  /// **'线路'**
+  /// **'连接线'**
   String get networkModeRoute;
 
   /// No description provided for @networkModeFixedNode.
   ///
   /// In zh, this message translates to:
-  /// **'固定节点'**
+  /// **'固定网络点'**
   String get networkModeFixedNode;
 
   /// No description provided for @networkTestOtherLatency.
   ///
   /// In zh, this message translates to:
-  /// **'测试其他节点延迟'**
+  /// **'测试其他网络点延迟'**
   String get networkTestOtherLatency;
 
   /// No description provided for @networkFixedNodeAutoSelected.
   ///
   /// In zh, this message translates to:
-  /// **'测速后已选择延迟最低的节点'**
+  /// **'测速后已选择延迟最低的网络点'**
   String get networkFixedNodeAutoSelected;
 
   /// No description provided for @networkRouteLabel.
   ///
   /// In zh, this message translates to:
-  /// **'线路 {index}'**
+  /// **'连接线 {index}'**
   String networkRouteLabel(int index);
 
   /// No description provided for @networkTestLatency.
   ///
   /// In zh, this message translates to:
-  /// **'测试线路延迟'**
+  /// **'测试连接线延迟'**
   String get networkTestLatency;
 
   /// No description provided for @networkTestingNodes.
   ///
   /// In zh, this message translates to:
-  /// **'正在检测各节点...'**
+  /// **'正在检测各网络点...'**
   String get networkTestingNodes;
 
   /// No description provided for @networkNotTested.
@@ -2014,7 +2014,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkNodeLabel.
   ///
   /// In zh, this message translates to:
-  /// **'节点 {index}'**
+  /// **'网络点 {index}'**
   String networkNodeLabel(int index);
 
   /// No description provided for @networkTesting.
@@ -2158,7 +2158,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkStatusUnknownHint.
   ///
   /// In zh, this message translates to:
-  /// **'点击下方按钮测速，了解各节点延迟'**
+  /// **'点击下方按钮测速，了解各网络点延迟'**
   String get networkStatusUnknownHint;
 
   /// No description provided for @networkTestLatencyShort.
@@ -2170,19 +2170,19 @@ abstract class AppLocalizations {
   /// No description provided for @networkNodeGridRouteHint.
   ///
   /// In zh, this message translates to:
-  /// **'选择一条线路，测速后自动切换到最快的'**
+  /// **'选择一条连接线，测速后自动切换到最快的'**
   String get networkNodeGridRouteHint;
 
   /// No description provided for @networkNodeGridFixedHint.
   ///
   /// In zh, this message translates to:
-  /// **'点击节点卡片即可固定到该节点'**
+  /// **'点击网络点卡片即可固定到该网络点'**
   String get networkNodeGridFixedHint;
 
   /// No description provided for @networkModeFixedNodeShort.
   ///
   /// In zh, this message translates to:
-  /// **'节点'**
+  /// **'网络点'**
   String get networkModeFixedNodeShort;
 
   /// No description provided for @networkSettings.
@@ -2200,7 +2200,7 @@ abstract class AppLocalizations {
   /// No description provided for @networkHistorySettingsTitle.
   ///
   /// In zh, this message translates to:
-  /// **'节点历史记录'**
+  /// **'网络点历史记录'**
   String get networkHistorySettingsTitle;
 
   /// No description provided for @networkStatusAutoGoodHint.

@@ -180,6 +180,12 @@ class UserManager extends ChangeNotifier {
   static const _keyLocale = 'locale';
   static const _keyBannerVisible = 'banner_visible';
   static const _keyMangaHomeSource = 'manga_home_source';
+  static const _keyTpMangaSource = 'tp_manga_source';
+  static const _keyWaman3BaseUrl = 'tp_waman3_base_url';
+  static const _keyManwabaApiHost = 'tp_manwaba_api_host';
+  static const _keyManwabaImageHost = 'tp_manwaba_image_host';
+  static const _keyManwabaDetectedApi = 'tp_manwaba_detected_api';
+  static const _keyManwabaDetectedImage = 'tp_manwaba_detected_image';
   static const _keyCopyApiHost = 'copy_api_host';
   static const _keyCopyLoginHost = 'copy_login_host';
   static const _keyCopyAppVersion = 'copy_app_version';
@@ -266,6 +272,13 @@ class UserManager extends ChangeNotifier {
   String _locale = ''; // '' = follow system, 'zh' = 简体, 'zh-Hant' = 繁体
   bool _bannerVisible = false;
   String _mangaHomeSource = 'hot';
+  // 第三方漫源（漫屋3/漫屋吧）主页切换按钮当前选中项
+  String _tpMangaSource = 'manwaba';
+  String _waman3BaseUrl = 'https://mseeowpma.cc';
+  String _manwabaApiHost = 'auto';
+  String _manwabaImageHost = 'auto';
+  String _manwabaDetectedApiHost = '';
+  String _manwabaDetectedImageHost = '';
   String _copyApiHost = defaultCopyApiHost;
   String _copyLoginHost = defaultCopyLoginHost;
   String _copyAppVersion = defaultCopyAppVersion;
@@ -379,6 +392,18 @@ class UserManager extends ChangeNotifier {
   String get locale => _locale;
   bool get bannerVisible => _bannerVisible;
   String get mangaHomeSource => _mangaHomeSource;
+  /// 第三方漫源（漫屋3/漫屋吧）切换按钮当前选中项
+  String get thirdPartyMangaSource => _tpMangaSource;
+  /// 漫屋3 API 地址
+  String get waman3BaseUrl => _waman3BaseUrl;
+  /// 漫屋吧 漫画站域名（'auto' = 自动检测）
+  String get manwabaApiHost => _manwabaApiHost;
+  /// 漫屋吧 图片源（'auto' = 自动检测）
+  String get manwabaImageHost => _manwabaImageHost;
+  /// 漫屋吧 自动检测缓存的可用 API 域名
+  String get manwabaDetectedApiHost => _manwabaDetectedApiHost;
+  /// 漫屋吧 自动检测缓存的可用图片源域名
+  String get manwabaDetectedImageHost => _manwabaDetectedImageHost;
   String get copyApiHost => _copyApiHost;
   String get copyLoginHost => _copyLoginHost;
   String get copyAppVersion => _copyAppVersion;
@@ -602,6 +627,14 @@ class UserManager extends ChangeNotifier {
     _locale = prefs.getString(_keyLocale) ?? '';
     _bannerVisible = prefs.getBool(_keyBannerVisible) ?? false;
     _mangaHomeSource = prefs.getString(_keyMangaHomeSource) ?? 'hot';
+    _tpMangaSource = prefs.getString(_keyTpMangaSource) ?? 'manwaba';
+    _waman3BaseUrl = prefs.getString(_keyWaman3BaseUrl) ?? 'https://mseeowpma.cc';
+    _manwabaApiHost = prefs.getString(_keyManwabaApiHost) ?? 'auto';
+    _manwabaImageHost = prefs.getString(_keyManwabaImageHost) ?? 'auto';
+    _manwabaDetectedApiHost =
+        prefs.getString(_keyManwabaDetectedApi)?.trim() ?? '';
+    _manwabaDetectedImageHost =
+        prefs.getString(_keyManwabaDetectedImage)?.trim() ?? '';
     _copyApiHost = normalizeCopyApiHost(prefs.getString(_keyCopyApiHost));
     _copyLoginHost = normalizeCopyLoginHost(prefs.getString(_keyCopyLoginHost));
     _copyAppVersion = normalizeCopyAppVersion(
@@ -1314,6 +1347,59 @@ class UserManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyMangaHomeSource, source);
     notifyListeners();
+  }
+
+  Future<void> setThirdPartyMangaSource(String source) async {
+    if (source != 'waman3' && source != 'manwaba') return;
+    if (_tpMangaSource == source) return;
+    _tpMangaSource = source;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyTpMangaSource, source);
+    notifyListeners();
+  }
+
+  Future<void> setWaman3BaseUrl(String value) async {
+    final normalized = value.trim();
+    if (normalized.isEmpty) return;
+    if (_waman3BaseUrl == normalized) return;
+    _waman3BaseUrl = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyWaman3BaseUrl, normalized);
+    notifyListeners();
+  }
+
+  Future<void> setManwabaApiHost(String value) async {
+    final normalized = value.trim();
+    if (_manwabaApiHost == normalized) return;
+    _manwabaApiHost = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyManwabaApiHost, normalized);
+    notifyListeners();
+  }
+
+  Future<void> setManwabaImageHost(String value) async {
+    final normalized = value.trim();
+    if (_manwabaImageHost == normalized) return;
+    _manwabaImageHost = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyManwabaImageHost, normalized);
+    notifyListeners();
+  }
+
+  Future<void> setManwabaDetectedApiHost(String value) async {
+    final normalized = value.trim();
+    if (_manwabaDetectedApiHost == normalized) return;
+    _manwabaDetectedApiHost = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyManwabaDetectedApi, normalized);
+  }
+
+  Future<void> setManwabaDetectedImageHost(String value) async {
+    final normalized = value.trim();
+    if (_manwabaDetectedImageHost == normalized) return;
+    _manwabaDetectedImageHost = normalized;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyManwabaDetectedImage, normalized);
   }
 
   Future<void> setCopyApiHost(String value) async {

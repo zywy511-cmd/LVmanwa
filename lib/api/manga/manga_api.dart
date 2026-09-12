@@ -374,6 +374,28 @@ class MangaApi {
     return (list: list, total: data['total'] as int);
   }
 
+  /// COPY 搜索（供搜索页「全部」聚合与单源筛选使用）。
+  Future<({List<Comic> list, int total})> searchCopyComics(
+    String query, {
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    final data = await _copyGet(
+      '/api/v3/search/comic',
+      params: {
+        'platform': 3,
+        'q': query,
+        'limit': limit,
+        'offset': offset,
+        'free_type': 1,
+        '_update': true,
+      },
+      errorMessage: 'Failed to search COPY comics',
+    );
+    final list = (data['list'] as List).map((e) => Comic.fromJson(e)).toList();
+    return (list: list, total: data['total'] as int);
+  }
+
   // 9. Chapter detail
   Future<ChapterDetail> getChapterDetail(
     String pathWord,

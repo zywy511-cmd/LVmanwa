@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:material3_expressive_loading_indicator/material3_expressive_loading_indicator.dart';
 
 import '../api/api_client.dart';
+import '../api/third_party/third_party_source.dart';
+import '../api/third_party/third_party_sources.dart';
 import '../l10n/app_localizations.dart';
 import '../models/anime.dart';
 import '../models/api_ordering.dart';
@@ -16,6 +18,7 @@ import '../repositories/search_init_repository.dart';
 import '../routing/app_router.dart';
 import '../theme/app_spacing.dart';
 import '../utils/cover_brightness_filter.dart';
+import '../utils/toast.dart';
 import '../widgets/comic_card_skeleton.dart';
 import '../widgets/comic_hero_tags.dart';
 import 'home_page.dart' show ComicCard;
@@ -42,6 +45,29 @@ class _SearchPageState extends State<SearchPage> {
   List<m.Theme> _tags = [];
   List<Comic> _comics = [];
   List<Anime> _animes = [];
+
+  // ── 多源聚合搜索状态 ──
+  // 'hot'=热辣 'copy'=拷贝 'waman3'=漫屋3 'manwaba'=漫屋吧
+  static const _sourceOptions = [
+    ('all', '全部'),
+    ('hot', '热辣'),
+    ('copy', '拷贝'),
+    ('waman3', '漫屋3'),
+    ('manwaba', '漫屋吧'),
+  ];
+  String _sourceFilter = 'all';
+  final Map<String, int> _sourcePages = {}; // 每源已加载页码
+  final Map<String, int> _sourceMaxPages = {}; // 每源最大页码
+  final Map<String, int> _sourceTotals = {}; // 每源总条数
+  final List<String> _sourceLabels = []; // 与 _comics 逐项对齐的来源名
+  int _pendingSearches = 0; // 「全部」模式并行首查未完成数
+
+  String _sourceName(String key) {
+    for (final (k, name) in _sourceOptions) {
+      if (k == key) return name;
+    }
+    return key;
+  }
 
   _SearchMode _mode = _SearchMode.comic;
   String? _selectedTag;
@@ -122,6 +148,8 @@ class _SearchPageState extends State<SearchPage> {
       _offset = 0;
       _total = 0;
       _selectedTag = null;
+      _sourceLabels.clear();
+      _pendingSearches = 0;
     });
 
     try {
@@ -135,19 +163,134 @@ class _SearchPageState extends State<SearchPage> {
           _searching = false;
         });
       } else {
-        final result = await _api.manga.searchComics(keyword);
-        if (!mounted || _mode != mode || _searchQuery != keyword) return;
-        setState(() {
-          _comics = result.list;
-          _total = result.total;
-          _offset = result.list.length;
-          _searching = false;
-        });
+        await _doSearchComic(keyword, mode);
       }
     } catch (e) {
       debugPrint('SearchPage search error: $e');
       if (mounted) setState(() => _searching = false);
     }
+  }
+
+  /// 单个源的第 page 页搜索结果（1-based）。
+  Future<({List<Comic> comics, int page, int maxPage, int total})>
+      _searchSourcePage(String sourceKey, String keyword, int page) async {
+    switch (sourceKey) {
+      case 'hot':
+        final r = await _api.manga.searchComics(keyword, offset: (page - 1) * 20);
+        return (
+          comics: r.list,
+          page: page,
+          maxPage: r.total <= 0 ? 1 : ((r.total + 19) ~/ 20),
+          total: r.total,
+        );
+      case 'copy':
+        final r = await _api.manga.searchCopyComics(
+          keyword,
+          offset: (page - 1) * 20,
+        );
+        return (
+          comics: r.list,
+          page: page,
+          maxPage: r.total <= 0 ? 1 : ((r.total + 19) ~/ 20),
+          total: r.total,
+        );
+      default:
+        final source = ThirdPartySources.byKey(sourceKey);
+        if (source == null) {
+          return (comics: const <Comic>[], page: 1, maxPage: 1, total: 0);
+        }
+        final r = await source.search(keyword, page);
+        final total = r.maxPage * 20;
+        return (comics: r.comics, page: page, maxPage: r.maxPage, total: total);
+    }
+  }
+
+  /// 漫画搜索：单源直接查；「全部」四源并行首查并聚合。
+  Future<void> _doSearchComic(String keyword, _SearchMode mode) async {
+    _sourcePages.clear();
+    _sourceMaxPages.clear();
+    _sourceTotals.clear();
+    if (_sourceFilter == 'all') {
+      final sources = ['hot', 'copy', 'waman3', 'manwaba'];
+      _pendingSearches = sources.length;
+      for (final key in sources) {
+        unawaited(
+          _searchSourcePage(key, keyword, 1).then((slice) {
+            if (!mounted || _mode != mode || _searchQuery != keyword) return;
+            setState(() {
+              _sourcePages[key] = slice.page;
+              _sourceMaxPages[key] = slice.maxPage;
+              _sourceTotals[key] = slice.total;
+              _comics.addAll(slice.comics);
+              _sourceLabels.addAll(
+                List.filled(slice.comics.length, _sourceName(key)),
+              );
+              _offset = _comics.length;
+              _pendingSearches--;
+              if (_pendingSearches <= 0) _searching = false;
+            });
+          }).catchError((e) {
+            debugPrint('SearchPage $key search error: $e');
+            if (!mounted || _mode != mode || _searchQuery != keyword) return;
+            setState(() {
+              _sourcePages[key] = 1;
+              _sourceMaxPages[key] = 1;
+              _sourceTotals[key] = 0;
+              _pendingSearches--;
+              if (_pendingSearches <= 0) _searching = false;
+            });
+          }),
+        );
+      }
+      return;
+    }
+
+    final slice = await _searchSourcePage(_sourceFilter, keyword, 1);
+    if (!mounted || _mode != mode || _searchQuery != keyword) return;
+    setState(() {
+      _sourcePages[_sourceFilter] = slice.page;
+      _sourceMaxPages[_sourceFilter] = slice.maxPage;
+      _sourceTotals[_sourceFilter] = slice.total;
+      _comics = slice.comics;
+      _sourceLabels.addAll(
+        List.filled(slice.comics.length, _sourceName(_sourceFilter)),
+      );
+      _total = slice.total;
+      _offset = slice.comics.length;
+      _searching = false;
+    });
+  }
+
+  /// 「全部」模式加载更多：所有还有下一页的源并行取下一页。
+  Future<void> _loadMoreAll() async {
+    final keyword = _searchQuery;
+    if (keyword == null) return;
+    final tasks = <Future<void>>[];
+    for (final key in const ['hot', 'copy', 'waman3', 'manwaba']) {
+      final loaded = _sourcePages[key] ?? 0;
+      final max = _sourceMaxPages[key] ?? 1;
+      if (loaded >= max) continue;
+      final next = loaded + 1;
+      tasks.add(
+        _searchSourcePage(key, keyword, next).then((slice) {
+          if (!mounted || _searchQuery != keyword) return;
+          setState(() {
+            _sourcePages[key] = slice.page;
+            _sourceMaxPages[key] = slice.maxPage;
+            _sourceTotals[key] = slice.total;
+            _comics.addAll(slice.comics);
+            _sourceLabels.addAll(
+              List.filled(slice.comics.length, _sourceName(key)),
+            );
+            _offset = _comics.length;
+          });
+        }).catchError((e) {
+          debugPrint('SearchPage $key loadMore error: $e');
+        }),
+      );
+    }
+    if (tasks.isEmpty) return;
+    await Future.wait(tasks);
   }
 
   Future<void> _loadComics({bool reset = true}) async {
@@ -159,6 +302,10 @@ class _SearchPageState extends State<SearchPage> {
         _comics = [];
         _animes = [];
         _searchQuery = null;
+        _sourceLabels.clear();
+        _sourcePages.clear();
+        _sourceMaxPages.clear();
+        _sourceTotals.clear();
         if (_selectedTag != null) _searching = true;
       });
     }
@@ -200,16 +347,32 @@ class _SearchPageState extends State<SearchPage> {
             _animes.addAll(result.list);
             _offset = _animes.length;
           });
+        } else if (_sourceFilter == 'all') {
+          await _loadMoreAll();
         } else {
-          final result = await _api.manga.searchComics(
-            _searchQuery!,
-            offset: _offset,
-          );
-          if (!mounted) return;
-          setState(() {
-            _comics.addAll(result.list);
-            _offset = _comics.length;
-          });
+          // 单源翻页：用每源页码推进
+          final key = _sourceFilter;
+          final loaded = _sourcePages[key] ?? 1;
+          final max = _sourceMaxPages[key] ?? 1;
+          if (loaded < max) {
+            final slice = await _searchSourcePage(
+              key,
+              _searchQuery!,
+              loaded + 1,
+            );
+            if (!mounted) return;
+            setState(() {
+              _sourcePages[key] = slice.page;
+              _sourceMaxPages[key] = slice.maxPage;
+              _sourceTotals[key] = slice.total;
+              _comics.addAll(slice.comics);
+              _sourceLabels.addAll(
+                List.filled(slice.comics.length, _sourceName(key)),
+              );
+              _offset = _comics.length;
+              _total = slice.maxPage * 20;
+            });
+          }
         }
       } else if (!_isAnimeMode) {
         await _loadComics(reset: false);
@@ -237,6 +400,11 @@ class _SearchPageState extends State<SearchPage> {
       _offset = 0;
       _total = 0;
       _searchQuery = keyword.isEmpty ? null : keyword;
+      _sourceLabels.clear();
+      _sourcePages.clear();
+      _sourceMaxPages.clear();
+      _sourceTotals.clear();
+      _pendingSearches = 0;
     });
     if (keyword.isNotEmpty) {
       _doSearch(keyword);
@@ -256,6 +424,11 @@ class _SearchPageState extends State<SearchPage> {
       _total = 0;
       _comics = [];
       _animes = [];
+      _sourceLabels.clear();
+      _sourcePages.clear();
+      _sourceMaxPages.clear();
+      _sourceTotals.clear();
+      _sourceFilter = 'hot'; // 标签浏览始终使用热辣源
     });
     if (next != null) {
       _loadComics();
@@ -270,6 +443,11 @@ class _SearchPageState extends State<SearchPage> {
       _animes = [];
       _offset = 0;
       _total = 0;
+      _sourceLabels.clear();
+      _sourcePages.clear();
+      _sourceMaxPages.clear();
+      _sourceTotals.clear();
+      _pendingSearches = 0;
     });
   }
 
@@ -353,6 +531,33 @@ class _SearchPageState extends State<SearchPage> {
                     ],
                     selected: {_mode},
                     onSelectionChanged: (v) => _setMode(v.first),
+                  ),
+                ),
+              ),
+            if (!_isAnimeMode)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(hp, 0, hp, 8),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        for (final (key, label) in _sourceOptions)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text(label),
+                              selected: _sourceFilter == key,
+                              onSelected: (_) {
+                                if (_sourceFilter == key) return;
+                                setState(() => _sourceFilter = key);
+                                final keyword = _searchQuery;
+                                if (keyword != null) _doSearch(keyword);
+                              },
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -547,16 +752,27 @@ class _SearchPageState extends State<SearchPage> {
             if (!_isAnimeMode && _comics.isNotEmpty)
               _ComicGrid(
                 comics: _comics,
+                sourceLabels: _sourceLabels.isEmpty ? null : _sourceLabels,
                 hp: hp,
                 loadingMore: _loadingMore,
-                onOpen: (comic, heroTagBase) => context.pushNamed(
-                  AppRoutes.comicDetail,
-                  pathParameters: {'pathWord': comic.pathWord},
-                  extra: ComicDetailExtra(
-                    initialComic: comic,
-                    heroTagBase: heroTagBase,
-                  ),
-                ),
+                onOpen: (comic, heroTagBase) {
+                  // 第三方漫源详情/阅读尚未接入，先提示
+                  if (ThirdPartyComicSource.sourceKeyOfPathWord(
+                        comic.pathWord,
+                      ) !=
+                      null) {
+                    showToast(context, '「${comic.name}」详情与阅读功能将在后续版本接入');
+                    return;
+                  }
+                  context.pushNamed(
+                    AppRoutes.comicDetail,
+                    pathParameters: {'pathWord': comic.pathWord},
+                    extra: ComicDetailExtra(
+                      initialComic: comic,
+                      heroTagBase: heroTagBase,
+                    ),
+                  );
+                },
               ),
             if (_isAnimeMode && _animes.isNotEmpty)
               _AnimeGrid(
@@ -575,12 +791,14 @@ class _SearchPageState extends State<SearchPage> {
 
 class _ComicGrid extends StatelessWidget {
   final List<Comic> comics;
+  final List<String>? sourceLabels;
   final double hp;
   final bool loadingMore;
   final void Function(Comic comic, String heroTagBase) onOpen;
 
   const _ComicGrid({
     required this.comics,
+    this.sourceLabels,
     required this.hp,
     required this.loadingMore,
     required this.onOpen,
@@ -601,10 +819,16 @@ class _ComicGrid extends StatelessWidget {
             pathWord: comic.pathWord,
             index: i,
           );
-          return ComicCard(
-            comic: comic,
-            heroTagBase: heroTagBase,
-            onTap: () => onOpen(comic, heroTagBase),
+          final label = sourceLabels != null && i < sourceLabels!.length
+              ? sourceLabels![i]
+              : null;
+          return _SourceBadge(
+            label: label,
+            child: ComicCard(
+              comic: comic,
+              heroTagBase: heroTagBase,
+              onTap: () => onOpen(comic, heroTagBase),
+            ),
           );
         }, childCount: comics.length + (loadingMore ? 6 : 0)),
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -614,6 +838,42 @@ class _ComicGrid extends StatelessWidget {
           crossAxisSpacing: 12,
         ),
       ),
+    );
+  }
+}
+
+/// 漫画卡片左上角来源角标（聚合搜索时区分 热辣/拷贝/漫屋3/漫屋吧）。
+class _SourceBadge extends StatelessWidget {
+  final String? label;
+  final Widget child;
+
+  const _SourceBadge({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    if (label == null) return child;
+    return Stack(
+      children: [
+        child,
+        Positioned(
+          top: 4,
+          left: 4,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              label!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

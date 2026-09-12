@@ -8,6 +8,8 @@ import '../api/api_transport.dart'
         defaultCopyApiHost,
         defaultCopyAppVersion,
         copyLoginHostOptions;
+import '../api/third_party/manwaba_source.dart';
+import '../api/third_party/waman3_source.dart';
 import '../l10n/app_localizations.dart';
 import '../models/user_manager.dart';
 import '../theme/app_radius.dart';
@@ -46,6 +48,16 @@ class _NetworkPageState extends State<NetworkPage>
   bool _advancedExpanded = false;
   NetworkProxyType _manualProxyType = NetworkProxyType.http;
 
+  // ── 第三方漫源网络设置（漫屋3 / 漫屋吧）──
+  bool _thirdPartyExpanded = true;
+  String? _waman3BaseUrl;
+  bool _waman3Testing = false;
+  String? _waman3Hint;
+  String? _manwabaApiHost;
+  String? _manwabaImageHost;
+  bool _manwabaDetecting = false;
+  String? _manwabaHint;
+
   /// 节点延迟结果。key 为线路索引(>=0)或 -1(其他固定 host)。
   Map<int, Map<String, int?>> _latencyResults = {};
   Set<String> _pendingLatencyHosts = {};
@@ -62,6 +74,9 @@ class _NetworkPageState extends State<NetworkPage>
     _copyApiHostController.text = _user.copyApiHost;
     _copyAppVersionController.text = _user.copyAppVersion;
     _manualProxyType = _user.networkProxyType;
+    _waman3BaseUrl = _user.waman3BaseUrl;
+    _manwabaApiHost = _user.manwabaApiHost;
+    _manwabaImageHost = _user.manwabaImageHost;
     _user.addListener(_onChanged);
     // 进入页面即自动测速一次,让用户第一时间看到各线路/节点延迟。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -148,6 +163,8 @@ class _NetworkPageState extends State<NetworkPage>
           _buildProxyCard(l10n, tt, cs),
           const SizedBox(height: AppSpacing.lg),
           _buildAdvancedCard(l10n, tt, cs),
+          const SizedBox(height: AppSpacing.lg),
+          _buildThirdPartyCard(l10n, tt, cs),
         ],
       ),
     );
@@ -1099,6 +1116,324 @@ class _NetworkPageState extends State<NetworkPage>
         ],
       ),
     );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 第三方漫源网络设置（漫屋3 / 漫屋吧）
+  // ─────────────────────────────────────────────────────────────────────
+
+  Widget _buildThirdPartyCard(
+    AppLocalizations l10n,
+    TextTheme tt,
+    ColorScheme cs,
+  ) {
+    return _buildElevatedCard(
+      color: cs.surfaceContainerLow,
+      borderRadius: AppRadius.xlR,
+      side: BorderSide(color: cs.outlineVariant),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () =>
+                  setState(() => _thirdPartyExpanded = !_thirdPartyExpanded),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+                child: Row(
+                  children: [
+                    Icon(Icons.public_rounded, color: cs.secondary, size: 22),
+                    const SizedBox(width: AppSpacing.md),
+                    Expanded(
+                      child: Text(
+                        '第三方漫源网络设置',
+                        style: tt.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '漫屋3 · 漫屋吧',
+                      style: tt.labelSmall?.copyWith(
+                        color: cs.onSurfaceVariant,
+                        letterSpacing: 1.0,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.xs),
+                    AnimatedRotation(
+                      turns: _thirdPartyExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: cs.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _thirdPartyExpanded
+                ? Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Divider(height: 1, color: cs.outlineVariant),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          '漫屋3',
+                          style: tt.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        DropdownButtonFormField<String>(
+                          initialValue: _waman3BaseUrl,
+                          decoration: const InputDecoration(
+                            labelText: '漫屋3 API 地址',
+                            helperText: '切换后需点「保存设置」生效',
+                            prefixIcon: Icon(Icons.dns_rounded),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final url in Waman3Source.baseUrlOptions)
+                              DropdownMenuItem<String>(
+                                value: url,
+                                child: Text(url),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _waman3BaseUrl = value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _ConnectedButtonGroup(
+                            children: [
+                              _ConnectedButtonGroupItem(
+                                onPressed:
+                                    _waman3Testing ? null : _testWaman3,
+                                loadingWidget: _waman3Testing
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: cs.primary,
+                                        ),
+                                      )
+                                    : null,
+                                icon: _waman3Testing ? null : Icons.speed,
+                                label: '测速',
+                              ),
+                              _ConnectedButtonGroupItem(
+                                onPressed: _saveWaman3Settings,
+                                icon: Icons.save_outlined,
+                                label: '保存设置',
+                                isPrimary: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_waman3Hint != null) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _waman3Hint!,
+                            style: tt.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: AppSpacing.lg),
+                        Divider(height: 1, color: cs.outlineVariant),
+                        const SizedBox(height: AppSpacing.md),
+                        Text(
+                          '漫屋吧',
+                          style: tt.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.sm),
+                        DropdownButtonFormField<String>(
+                          initialValue: _manwabaApiHost,
+                          decoration: const InputDecoration(
+                            labelText: '漫屋吧 漫画站域名',
+                            prefixIcon: Icon(Icons.dns_rounded),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final (value, label)
+                                in ManwabaSource.apiHostOptions)
+                              DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(label),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _manwabaApiHost = value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        DropdownButtonFormField<String>(
+                          initialValue: _manwabaImageHost,
+                          decoration: const InputDecoration(
+                            labelText: '漫屋吧 图片源',
+                            prefixIcon: Icon(Icons.image_outlined),
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final (value, label)
+                                in ManwabaSource.imageHostOptions)
+                              DropdownMenuItem<String>(
+                                value: value,
+                                child: Text(label),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              setState(() => _manwabaImageHost = value);
+                            }
+                          },
+                        ),
+                        const SizedBox(height: AppSpacing.md),
+                        SizedBox(
+                          width: double.infinity,
+                          child: _ConnectedButtonGroup(
+                            children: [
+                              _ConnectedButtonGroupItem(
+                                onPressed:
+                                    _manwabaDetecting ? null : _detectManwaba,
+                                loadingWidget: _manwabaDetecting
+                                    ? SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: cs.primary,
+                                        ),
+                                      )
+                                    : null,
+                                icon: _manwabaDetecting
+                                    ? null
+                                    : Icons.travel_explore,
+                                label: '自动检测',
+                              ),
+                              _ConnectedButtonGroupItem(
+                                onPressed: _saveManwabaSettings,
+                                icon: Icons.save_outlined,
+                                label: '保存设置',
+                                isPrimary: true,
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (_manwabaHint != null) ...[
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(
+                            _manwabaHint!,
+                            style: tt.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _testWaman3() async {
+    setState(() {
+      _waman3Testing = true;
+      _waman3Hint = null;
+    });
+    try {
+      final results = await Waman3Source.instance.speedTest();
+      if (!mounted) return;
+      setState(() {
+        _waman3Testing = false;
+        if (results.isEmpty) {
+          _waman3Hint = '所有节点均不可达，请检查网络或代理设置';
+        } else {
+          final lines = results
+              .map((r) => '${r.url}  ${r.latencyMs}ms')
+              .join('\n');
+          _waman3Hint = '测速结果（按延迟升序）：\n$lines\n\n'
+              '已将最快节点「${results.first.url}」填入上方下拉框，点「保存设置」生效';
+          _waman3BaseUrl = results.first.url;
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _waman3Testing = false;
+        _waman3Hint = '测速失败：$e';
+      });
+    }
+  }
+
+  Future<void> _saveWaman3Settings() async {
+    final value = _waman3BaseUrl?.trim() ?? '';
+    if (value.isEmpty) {
+      showToast(context, '请先选择漫屋3 API 地址', isError: true);
+      return;
+    }
+    await _user.setWaman3BaseUrl(value);
+    if (mounted) {
+      showToast(context, '漫屋3 设置已保存');
+    }
+  }
+
+  Future<void> _detectManwaba() async {
+    setState(() {
+      _manwabaDetecting = true;
+      _manwabaHint = null;
+    });
+    try {
+      final result = await ManwabaSource.instance.autoDetect();
+      if (!mounted) return;
+      setState(() {
+        _manwabaDetecting = false;
+        _manwabaHint =
+            '检测完成：\nAPI 域名：${result.apiHost}\n图片源：${result.imageHost}\n'
+            '（自动检测结果已缓存，漫屋吧选择「自动检测」时自动生效）';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _manwabaDetecting = false;
+        _manwabaHint = '自动检测失败：$e';
+      });
+    }
+  }
+
+  Future<void> _saveManwabaSettings() async {
+    final api = _manwabaApiHost?.trim() ?? 'auto';
+    final image = _manwabaImageHost?.trim() ?? 'auto';
+    await _user.setManwabaApiHost(api);
+    await _user.setManwabaImageHost(image);
+    if (mounted) {
+      showToast(context, '漫屋吧 设置已保存');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────

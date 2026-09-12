@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:material3_expressive_loading_indicator/material3_expressive_loading_indicator.dart';
 
+import '../api/third_party/third_party_source.dart';
+import '../api/third_party/third_party_sources.dart';
 import '../l10n/app_localizations.dart';
 import '../models/comic.dart' hide Theme;
 import '../models/user_manager.dart';
@@ -18,6 +20,7 @@ import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/cover_brightness_filter.dart';
 import '../utils/time_format.dart';
+import '../utils/toast.dart';
 import '../widgets/comic_card_surface.dart';
 import '../widgets/comic_hero_tags.dart';
 
@@ -65,6 +68,7 @@ class _HomePageState extends ConsumerState<HomePage> {
   UserManager get _user => ref.read(userManagerProvider);
   MangaHome? _home;
   CopyMangaHome? _copyHome;
+  Map<String, List<Comic>>? _tpHome;
   String? _activeSource; // 当前已加载的数据源
   List<Comic> _rankingPreview = [];
   bool _loading = true;
@@ -95,6 +99,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       _error = null;
       _home = null;
       _copyHome = null;
+      _tpHome = null;
       _loadFromCache();
       _load();
     }
@@ -103,7 +108,16 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   bool get _isCopySource => _user.mangaHomeSource == 'copy';
 
+  bool get _isThirdPartySource {
+    final source = _user.mangaHomeSource;
+    return source == 'waman3' || source == 'manwaba';
+  }
+
+  ThirdPartyComicSource? get _tpSource =>
+      ThirdPartySources.byKey(_user.mangaHomeSource);
+
   Future<void> _loadFromCache() async {
+    if (_isThirdPartySource) return; // 第三方源无磁盘缓存
     if (_isCopySource) {
       final cached = await _repo.loadBFromCache();
       if (!mounted || cached == null || !_loading) return;
@@ -124,6 +138,9 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Future<void> _load({bool forceRefresh = false}) async {
     if (_isCopySource) return _loadCopy(forceRefresh: forceRefresh);
+    if (_isThirdPartySource) {
+      return _loadThirdParty(forceRefresh: forceRefresh);
+    }
     final hasData = _home != null;
     if (!hasData) {
       setState(() {
@@ -182,7 +199,43 @@ class _HomePageState extends ConsumerState<HomePage> {
     }
   }
 
+  Future<void> _loadThirdParty({bool forceRefresh = false}) async {
+    final source = _tpSource;
+    if (source == null) return;
+    final hasData = _tpHome != null;
+    if (!hasData) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    } else {
+      setState(() => _refreshing = true);
+    }
+    try {
+      final sections = await source.loadHome();
+      if (!mounted) return;
+      setState(() {
+        _tpHome = sections;
+        _loading = false;
+        _refreshing = false;
+      });
+    } catch (e) {
+      debugPrint('HomePage ${source.key} load error: $e');
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _refreshing = false;
+        _error = e.toString();
+      });
+    }
+  }
+
   void _openComic(Comic comic, String heroTagBase) {
+    // 第三方漫源详情/阅读尚未接入，先提示
+    if (ThirdPartyComicSource.sourceKeyOfPathWord(comic.pathWord) != null) {
+      showToast(context, '「${comic.name}」详情与阅读功能将在后续版本接入');
+      return;
+    }
     context.pushNamed(
       AppRoutes.comicDetail,
       pathParameters: {'pathWord': comic.pathWord},
@@ -199,19 +252,25 @@ class _HomePageState extends ConsumerState<HomePage> {
     final hp = (screenWidth - contentWidth) / 2 + 16;
     final home = _home;
     final copyHome = _copyHome;
+    final tpHome = _tpHome;
     final isCopy = _isCopySource;
+    final isTp = _isThirdPartySource;
 
     if (_loading) {
       return Scaffold(
-        floatingActionButton: _buildSourceFab(),
+        floatingActionButton: _buildFabColumn(),
         body: const Center(child: ExpressiveLoadingIndicator()),
       );
     }
 
-    final hasData = isCopy ? copyHome != null : home != null;
+    final hasData = isCopy
+        ? copyHome != null
+        : isTp
+        ? tpHome != null
+        : home != null;
     if (_error != null && !hasData) {
       return Scaffold(
-        floatingActionButton: _buildSourceFab(),
+        floatingActionButton: _buildFabColumn(),
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -243,6 +302,8 @@ class _HomePageState extends ConsumerState<HomePage> {
 
     if (isCopy && copyHome != null) {
       slivers.addAll(_buildCopySlivers(copyHome, hp));
+    } else if (isTp && tpHome != null) {
+      slivers.addAll(_buildThirdPartySlivers(tpHome, hp));
     } else if (home != null) {
       final bannerItems = home.banners
           .map(_MangaBannerItem.fromBanner)
@@ -321,12 +382,121 @@ class _HomePageState extends ConsumerState<HomePage> {
     slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 88)));
 
     return Scaffold(
-      floatingActionButton: _buildSourceFab(),
+      floatingActionButton: _buildFabColumn(),
       body: RefreshIndicator(
         onRefresh: () => _load(forceRefresh: true),
         child: CustomScrollView(slivers: slivers),
       ),
     );
+  }
+
+  /// 右下角按钮组：上方是第三方漫源（漫屋3/漫屋吧）切换，下方是 hot/copy 切换。
+  Widget _buildFabColumn() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        _buildThirdPartySourceFab(),
+        const SizedBox(height: 12),
+        _buildSourceFab(),
+      ],
+    );
+  }
+
+  /// 第三方漫源切换按钮：点一下进入/切换对应漫源的主页。
+  /// 未在第三方源时点击进入当前选中的第三方源；已在第三方源时在两个源之间切换。
+  Widget _buildThirdPartySourceFab() {
+    final current = _user.thirdPartyMangaSource;
+    final source = ThirdPartySources.byKey(current);
+    final name = source?.name ?? '漫屋吧';
+    final isTpActive = _isThirdPartySource;
+    final target = isTpActive
+        ? (current == 'waman3' ? 'manwaba' : 'waman3')
+        : current;
+    final targetName = ThirdPartySources.byKey(target)?.name ?? '漫屋吧';
+    return FloatingActionButton.extended(
+      heroTag: 'home-thirdparty-source-switch',
+      tooltip: isTpActive ? '切换到$targetName' : '切换到$name',
+      onPressed: () async {
+        if (isTpActive) {
+          await _user.setThirdPartyMangaSource(target);
+          await _user.setMangaHomeSource(target);
+        } else {
+          await _user.setMangaHomeSource(current);
+        }
+      },
+      icon: Icon(
+        current == 'waman3' ? Icons.auto_awesome_motion : Icons.auto_stories,
+        size: 20,
+      ),
+      label: Text(
+        name,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  /// 第三方漫源主页各板块（复用 COPY 的折叠卡片样式）。
+  List<Widget> _buildThirdPartySlivers(
+    Map<String, List<Comic>> sections,
+    double hp,
+  ) {
+    final slivers = <Widget>[];
+    final sourceKey = _user.mangaHomeSource;
+    final icons = <String, IconData>{
+      '最新更新': Icons.update,
+      '热门收藏': Icons.star,
+      '热门': Icons.local_fire_department,
+      '最新完整版': Icons.done_all,
+      '女主逆袭': Icons.auto_awesome,
+    };
+    var index = 0;
+    for (final entry in sections.entries) {
+      if (entry.value.isEmpty) continue;
+      final scope = 'tp-$sourceKey-$index';
+      slivers.add(
+        _CopyCollapsibleSection(
+          storageKey: scope,
+          title: entry.key,
+          icon: icons[entry.key] ?? Icons.book,
+          hp: hp,
+          topPadding: index == 0 ? 8 : 0,
+          child: _CopyHorizontalComicList(
+            items: entry.value,
+            onTap: _openComic,
+            scope: scope,
+          ),
+        ),
+      );
+      index++;
+    }
+    if (slivers.isEmpty) {
+      final l10n = AppLocalizations.of(context)!;
+      slivers.add(
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.inbox_outlined,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                Text(l10n.noContent, style: Theme.of(context).textTheme.titleMedium),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return slivers;
   }
 
   /// 右下角切换 hot / copy 首页数据源的悬浮按钮，图标旁显示当前数据源
