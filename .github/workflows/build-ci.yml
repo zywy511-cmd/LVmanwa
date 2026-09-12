@@ -1,0 +1,170 @@
+name: Build CI APK
+
+# Actions 产物从网页下载时会被 GitHub 打包成 zip。
+# 因此这里同时上传到固定的 CI 预发布，把 APK 作为 Release asset 提供，方便手机直接下载。
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "构建说明 (可选)"
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'pubspec.yaml'
+
+env:
+  FLUTTER_VERSION: "3.44.0"
+
+jobs:
+  build-android:
+    name: Build Android CI APK (arm64-v8a)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: "zulu"
+          java-version: "17"
+          cache: "gradle"
+
+      - name: Restore Android signing files
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+
+          cat > android/key.properties <<EOF
+          storeFile=../upload-keystore.jks
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          keyPassword=$ANDROID_KEY_PASSWORD
+          EOF
+
+      - name: Validate Android signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          test -s android/upload-keystore.jks
+          test -s android/key.properties
+
+          keytool -list -v \
+            -keystore android/upload-keystore.jks \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" \
+            -alias "$ANDROID_KEY_ALIAS" \
+            -keypass "$ANDROID_KEY_PASSWORD" \
+            > /dev/null
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Build APK (arm64-v8a)
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: >
+          flutter build apk --release --target-platform android-arm64
+          --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}"
+          --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)
+          test -n "$APP_VERSION"
+
+          cd build/app/outputs/flutter-apk
+          mv app-release.apk "kira-${APP_VERSION}-arm64-v8a.apk"
+          ls -lh kira-*.apk
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v6
+        with:
+          name: kira-ci-apk
+          path: build/app/outputs/flutter-apk/kira-*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Upload to CI pre-release for direct APK download
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTE: ${{ github.event.inputs.note }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          APP_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)
+          TAG="CI"
+          TITLE="CI APK"
+          APK=$(find build/app/outputs/flutter-apk -maxdepth 1 -name 'kira-*.apk' -print -quit)
+
+          test -n "$APP_VERSION"
+          test -n "$APK"
+
+          {
+            echo "集中 CI APK 测试包。"
+            echo
+            echo "最新上传版本: ${APP_VERSION}"
+            echo "最近提交:"
+            git log --oneline -5
+            echo
+            echo "工作流: ${RUN_URL}"
+            if [ -n "$NOTE" ]; then
+              echo
+              echo "$NOTE"
+            fi
+          } > release-notes.md
+
+          if gh release view "$TAG" --repo="$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+
+            gh release upload "$TAG" "$APK" \
+              --repo="$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$APK" \
+              --repo="$GITHUB_REPOSITORY" \
+              --target="$GITHUB_SHA" \
+              --title="$TITLE" \
+              --notes-file release-notes.md \
+              --prerelease \
+              --latest=false
+          fi

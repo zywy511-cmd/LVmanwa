@@ -1,0 +1,23 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "adb connect MuMu",
+            "type": "shell",
+            "command": "adb connect 127.0.0.1:16384",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
+        },
+        {
+            "label": "launch emulator",
+            "type": "shell",
+            "command": "flutter emulators --launch Medium_Phone_API_36",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
+        }
+    ]
+}
