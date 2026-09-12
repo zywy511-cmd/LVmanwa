@@ -156,6 +156,11 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
       if (images.isNotEmpty && _isPageMode && _pageController.hasClients) {
         _pageController.jumpToPage(_page - 1);
       }
+      // 连续阅读：整章加载后立即预载下一话
+      if (_user.readerContinuousReading &&
+          globalIndex < widget.chapters.length - 1) {
+        unawaited(_appendNext());
+      }
     } catch (e) {
       debugPrint('${source.key} 章节图片加载失败: $e');
       if (!mounted) return;
@@ -278,9 +283,9 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
     setState(() => _page = page);
     _syncChapterFromPage(page);
     unawaited(_saveProgress());
-    // 连续阅读：翻到链尾自动追加下一话
+    // 连续阅读：还剩 2 页时预加载下一话，翻到末尾时已就绪无缝衔接
     if (_user.readerContinuousReading &&
-        page == _flat.length &&
+        page >= _flat.length - 2 &&
         _chain.isNotEmpty &&
         _chain.last.globalIndex < widget.chapters.length - 1) {
       unawaited(_appendNext());
@@ -523,9 +528,9 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
       controller: _scrollController,
       itemCount: _flat.length,
       itemBuilder: (context, i) {
-        // 滚动接近末尾时预加载下一话（连续阅读）
+        // 滚动接近末尾（剩 3 项）时预加载下一话（连续阅读）
         if (_user.readerContinuousReading &&
-            i >= _flat.length - 2 &&
+            i >= _flat.length - 3 &&
             _chain.isNotEmpty &&
             _chain.last.globalIndex < widget.chapters.length - 1) {
           unawaited(_appendNext());
