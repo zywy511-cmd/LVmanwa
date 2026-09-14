@@ -408,43 +408,16 @@ class _AboutPageState extends State<AboutPage> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
             children: [
-              // Compact horizontal brand header: logo + name/version.
-              Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: AppRadius.lgR,
-                    child: Image.asset(
-                      _user.appLogoPath,
-                      width: 52,
-                      height: 52,
-                      fit: BoxFit.cover,
-                    ),
+              // 版本信息（品牌图标与名称已按要求移除）。
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  version,
+                  style: tt.bodyMedium?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    height: 1.2,
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Kira',
-                          style: tt.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                            height: 1.15,
-                          ),
-                        ),
-                        const SizedBox(height: AppSpacing.xs),
-                        Text(
-                          version,
-                          style: tt.bodySmall?.copyWith(
-                            color: cs.onSurfaceVariant,
-                            height: 1.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                ),
               ),
               const SizedBox(height: AppSpacing.xl),
               _UpdateCard(

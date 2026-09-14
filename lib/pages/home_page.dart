@@ -79,7 +79,14 @@ class _HomePageState extends ConsumerState<HomePage> {
   void initState() {
     super.initState();
     _user.addListener(_onUserChanged);
-    _activeSource = _user.mangaHomeSource;
+    // 第三方漫源主页入口已移除：若之前停在漫屋3/漫屋吧，重置回默认源，
+    // 避免主页卡在第三方源且无法切回。
+    if (_isThirdPartySource) {
+      _user.setMangaHomeSource('hot');
+      _activeSource = 'hot';
+    } else {
+      _activeSource = _user.mangaHomeSource;
+    }
     _loadFromCache();
     _load();
   }
@@ -391,53 +398,14 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  /// 右下角按钮组：上方是第三方漫源（漫屋3/漫屋吧）切换，下方是 hot/copy 切换。
+  /// 右下角按钮组：hot/copy 切换。
   Widget _buildFabColumn() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        _buildThirdPartySourceFab(),
-        const SizedBox(height: 12),
         _buildSourceFab(),
       ],
-    );
-  }
-
-  /// 第三方漫源切换按钮：点一下进入/切换对应漫源的主页。
-  /// 未在第三方源时点击进入当前选中的第三方源；已在第三方源时在两个源之间切换。
-  Widget _buildThirdPartySourceFab() {
-    final current = _user.thirdPartyMangaSource;
-    final source = ThirdPartySources.byKey(current);
-    final name = source?.name ?? '漫屋吧';
-    final isTpActive = _isThirdPartySource;
-    final target = isTpActive
-        ? (current == 'waman3' ? 'manwaba' : 'waman3')
-        : current;
-    final targetName = ThirdPartySources.byKey(target)?.name ?? '漫屋吧';
-    return FloatingActionButton.extended(
-      heroTag: 'home-thirdparty-source-switch',
-      tooltip: isTpActive ? '切换到$targetName' : '切换到$name',
-      onPressed: () async {
-        if (isTpActive) {
-          await _user.setThirdPartyMangaSource(target);
-          await _user.setMangaHomeSource(target);
-        } else {
-          await _user.setMangaHomeSource(current);
-        }
-      },
-      icon: Icon(
-        current == 'waman3' ? Icons.auto_awesome_motion : Icons.auto_stories,
-        size: 20,
-      ),
-      label: Text(
-        name,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
-          letterSpacing: 0.5,
-        ),
-      ),
     );
   }
 
