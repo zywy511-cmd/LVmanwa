@@ -51,7 +51,11 @@ class _LoginPageState extends State<LoginPage> {
     }
     _usernameCtrl.addListener(_onCredentialDraftChanged);
     _user.addListener(_onUserChanged);
-    _useCopyLogin = _user.loginSource == 'copy';
+    // 默认选择拷贝漫画登录；已保存过登录凭证时跟随凭证来源。
+    final hasSavedCredentials = _user.savedCredentials.isNotEmpty;
+    _useCopyLogin = hasSavedCredentials
+        ? _user.loginSource == 'copy'
+        : true;
   }
 
   @override

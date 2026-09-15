@@ -22,6 +22,9 @@ class DownloadManager extends ChangeNotifier {
   static const _comicMetaFileName = 'comic.json';
   static const _coverFileName = 'cover';
   static const Duration _timeout = Duration(seconds: 20);
+
+  /// 图片并发下载数（参考上游 kira 默认值 8）。
+  static const int _defaultImageConcurrency = 8;
   static const Map<String, String> _imageExtensions = {
     'image/jpeg': '.jpg',
     'image/png': '.png',
@@ -340,20 +343,36 @@ class DownloadManager extends ChangeNotifier {
       );
       notifyListeners();
 
-      final localPaths = <String>[];
-      for (var i = 0; i < detail.contents.length; i++) {
-        final savedFile = await _downloadImage(
-          detail.contents[i],
-          chapterDir,
-          i + 1,
-        );
-        localPaths.add(savedFile.path);
-        _activeProgress = ChapterDownloadProgress(
-          completed: i + 1,
-          total: detail.contents.length,
-        );
-        notifyListeners();
-      }
+      // 并发下载图片（参考上游 kira：默认并发 8，单张失败不中断整章）。
+      final localPaths = List<String>.filled(detail.contents.length, '');
+      var completed = 0;
+      final semaphore = _Semaphore(_defaultImageConcurrency);
+      await Future.wait(
+        List.generate(detail.contents.length, (i) {
+          return semaphore.run(() async {
+            try {
+              final savedFile = await _downloadImage(
+                detail.contents[i],
+                chapterDir,
+                i + 1,
+              );
+              localPaths[i] = savedFile.path;
+            } catch (e) {
+              // 单张失败跳过，不中断整章；下载失败张数为空字符串。
+              debugPrint(
+                'Image #${i + 1} download failed: $e',
+              );
+            } finally {
+              completed++;
+              _activeProgress = ChapterDownloadProgress(
+                completed: completed,
+                total: detail.contents.length,
+              );
+              notifyListeners();
+            }
+          });
+        }),
+      );
 
       final localDetail = detail.copyWith(
         contents: localPaths,
@@ -810,4 +829,41 @@ class ComicDownloadTaskInfo {
     required this.status,
     this.progress,
   });
+}
+
+
+/// 轻量并发信号量：限制同时运行的任务数。
+class _Semaphore {
+  _Semaphore(this._max);
+
+  final int _max;
+  int _active = 0;
+  final List<Completer<void>> _waiters = [];
+
+  Future<T> run<T>(Future<T> Function() fn) async {
+    await _acquire();
+    try {
+      return await fn();
+    } finally {
+      _release();
+    }
+  }
+
+  Future<void> _acquire() async {
+    if (_active < _max) {
+      _active++;
+      return;
+    }
+    final completer = Completer<void>();
+    _waiters.add(completer);
+    await completer.future;
+    _active++;
+  }
+
+  void _release() {
+    _active--;
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    }
+  }
 }
