@@ -570,11 +570,7 @@ class _ComicQueueTaskCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const Icon(
-                  Icons.menu_book_outlined,
-                  size: 20,
-                  color: Colors.amber,
-                ),
+                _buildComicActionButton(context, task),
               ],
             ),
             if (task.status == ComicDownloadTaskStatus.downloading &&
@@ -594,6 +590,43 @@ class _ComicQueueTaskCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Widget _buildComicActionButton(
+    BuildContext context,
+    ComicDownloadTaskInfo task,
+  ) {
+    final l10n = AppLocalizations.of(context)!;
+    final downloads = DownloadManager();
+    final cs = Theme.of(context).colorScheme;
+
+    switch (task.status) {
+      case ComicDownloadTaskStatus.downloading:
+      case ComicDownloadTaskStatus.pending:
+        return IconButton(
+          onPressed: () => downloads.pauseTask(task.pathWord, task.chapterUuid),
+          icon: Icon(Icons.pause, color: cs.onSurfaceVariant),
+          tooltip: l10n.pauseButton,
+        );
+      case ComicDownloadTaskStatus.paused:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              onPressed: () =>
+                  downloads.resumeTask(task.pathWord, task.chapterUuid),
+              icon: Icon(Icons.play_arrow, color: cs.primary),
+              tooltip: l10n.resumeButton,
+            ),
+            IconButton(
+              onPressed: () =>
+                  downloads.cancelTask(task.pathWord, task.chapterUuid),
+              icon: Icon(Icons.close, color: cs.error),
+              tooltip: l10n.cancelButton,
+            ),
+          ],
+        );
+    }
   }
 
   Widget _placeholder(ColorScheme cs) => ColoredBox(
@@ -643,6 +676,22 @@ class _ComicQueueTaskCard extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               l10n.waitingStatus,
+              style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ],
+        );
+      case ComicDownloadTaskStatus.paused:
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.pause_circle_outline,
+              size: 14,
+              color: cs.onSurfaceVariant,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              l10n.pausedStatus,
               style: tt.labelSmall?.copyWith(color: cs.onSurfaceVariant),
             ),
           ],

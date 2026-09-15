@@ -48,6 +48,16 @@ class DownloadManager extends ChangeNotifier {
   Directory? _rootDirectory;
   String? _activeKey;
   ChapterDownloadProgress? _activeProgress;
+  _DownloadTask? _activeTask;
+
+  /// 已暂停的任务 key（含正在下载中被中止的）。
+  final Set<String> _pausedTaskKeys = {};
+
+  /// 暂停任务保留的任务数据，恢复下载时重新入队。
+  final Map<String, _DownloadTask> _pausedTasks = {};
+
+  /// 取消请求标记：图片循环检查到即中止。
+  final Set<String> _cancelledTaskKeys = {};
 
   bool get isBusy => _queuedKeys.isNotEmpty;
 
@@ -65,7 +75,9 @@ class DownloadManager extends ChangeNotifier {
           chapterName: task.chapter.name,
           comicName: info?.comic.name ?? task.pathWord,
           cover: info?.comic.cover,
-          status: isActive
+          status: _pausedTaskKeys.contains(key)
+              ? ComicDownloadTaskStatus.paused
+              : isActive
               ? ComicDownloadTaskStatus.downloading
               : ComicDownloadTaskStatus.pending,
           progress: isActive ? _activeProgress : null,
@@ -137,6 +149,9 @@ class DownloadManager extends ChangeNotifier {
 
   bool isDownloading(String pathWord, String chapterUuid) =>
       _activeKey == _taskKey(pathWord, chapterUuid);
+
+  bool isPaused(String pathWord, String chapterUuid) =>
+      _pausedTaskKeys.contains(_taskKey(pathWord, chapterUuid));
 
   ChapterDownloadProgress? progressOf(String pathWord, String chapterUuid) =>
       isDownloading(pathWord, chapterUuid) ? _activeProgress : null;
@@ -290,6 +305,60 @@ class DownloadManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 暂停指定章节下载：队列中未开始的移除到暂停表；
+  /// 正在下载的由图片循环检查标记中止（保留已下载图片）。
+  Future<void> pauseTask(String pathWord, String chapterUuid) async {
+    final key = _taskKey(pathWord, chapterUuid);
+    _pausedTaskKeys.add(key);
+    _cancelledTaskKeys.remove(key);
+
+    final queuedIndex = _queue.indexWhere(
+      (t) => _taskKey(t.pathWord, t.chapter.uuid) == key,
+    );
+    if (queuedIndex >= 0) {
+      _pausedTasks[key] = _queue.removeAt(queuedIndex);
+      _queuedKeys.remove(key);
+    } else if (_activeTask != null &&
+        _taskKey(_activeTask!.pathWord, _activeTask!.chapter.uuid) == key) {
+      // 正在下载：由 _downloadChapter 的循环检查中止。
+      _pausedTasks[key] = _activeTask!;
+    }
+    notifyListeners();
+  }
+
+  /// 恢复暂停的章节下载（续传：跳过已下载完成的图片）。
+  Future<void> resumeTask(String pathWord, String chapterUuid) async {
+    final key = _taskKey(pathWord, chapterUuid);
+    if (!_pausedTaskKeys.remove(key)) return;
+    final task = _pausedTasks.remove(key);
+    _queuedKeys.remove(key);
+    if (task != null) {
+      _queue.add(task);
+      _queuedKeys.add(key);
+      notifyListeners();
+      unawaited(_processQueue());
+    }
+  }
+
+  /// 取消章节下载：移出队列并删除已下载文件。
+  Future<void> cancelTask(String pathWord, String chapterUuid) async {
+    final key = _taskKey(pathWord, chapterUuid);
+    _cancelledTaskKeys.add(key);
+    _pausedTaskKeys.remove(key);
+    _pausedTasks.remove(key);
+    _queue.removeWhere(
+      (t) => _taskKey(t.pathWord, t.chapter.uuid) == key,
+    );
+    _queuedKeys.remove(key);
+    await _removeDownloadedChapter(
+      pathWord,
+      chapterUuid,
+      deleteFiles: true,
+    );
+    _cancelledTaskKeys.remove(key);
+    notifyListeners();
+  }
+
   Future<void> _processQueue() async {
     if (_processing) return;
     _processing = true;
@@ -299,6 +368,7 @@ class DownloadManager extends ChangeNotifier {
         final task = _queue.removeAt(0);
         final key = _taskKey(task.pathWord, task.chapter.uuid);
         _activeKey = key;
+        _activeTask = task;
         _activeProgress = null;
         notifyListeners();
 
@@ -311,6 +381,7 @@ class DownloadManager extends ChangeNotifier {
         } finally {
           _queuedKeys.remove(key);
           _activeKey = null;
+          _activeTask = null;
           _activeProgress = null;
           notifyListeners();
         }
@@ -322,10 +393,11 @@ class DownloadManager extends ChangeNotifier {
   }
 
   Future<void> _downloadChapter(_DownloadTask task) async {
+    final key = _taskKey(task.pathWord, task.chapter.uuid);
     final chapterDir = _chapterDirectory(task.pathWord, task.chapter.uuid);
 
     try {
-      await _resetDirectory(chapterDir);
+      await chapterDir.create(recursive: true);
 
       final detail = await _api.manga.getChapterDetail(
         task.pathWord,
@@ -344,12 +416,39 @@ class DownloadManager extends ChangeNotifier {
       notifyListeners();
 
       // 并发下载图片（参考上游 kira：默认并发 8，单张失败不中断整章）。
+      // 暂停/取消后恢复时跳过已下载完成的图片，实现续传。
+      final existingByIndex = <int, String>{};
+      await for (final entity in chapterDir.list()) {
+        if (entity is File) {
+          final name = entity.uri.pathSegments.last;
+          final match = RegExp(r'^(\d{3})\.[a-z0-9]+$').firstMatch(name);
+          if (match != null) {
+            existingByIndex[int.parse(match.group(1)!)] = entity.path;
+          }
+        }
+      }
       final localPaths = List<String>.filled(detail.contents.length, '');
       var completed = 0;
       final semaphore = _Semaphore(_defaultImageConcurrency);
       await Future.wait(
         List.generate(detail.contents.length, (i) {
           return semaphore.run(() async {
+            // 暂停/取消后不再领取新图片。
+            if (_pausedTaskKeys.contains(key) ||
+                _cancelledTaskKeys.contains(key)) {
+              return;
+            }
+            final existing = existingByIndex[i + 1];
+            if (existing != null) {
+              localPaths[i] = existing;
+              completed++;
+              _activeProgress = ChapterDownloadProgress(
+                completed: completed,
+                total: detail.contents.length,
+              );
+              notifyListeners();
+              return;
+            }
             try {
               final savedFile = await _downloadImage(
                 detail.contents[i],
@@ -373,6 +472,11 @@ class DownloadManager extends ChangeNotifier {
           });
         }),
       );
+
+      // 暂停/取消：保留已下载文件，不写章节元数据（恢复时续传）。
+      if (_pausedTaskKeys.contains(key) || _cancelledTaskKeys.contains(key)) {
+        return;
+      }
 
       final localDetail = detail.copyWith(
         contents: localPaths,
@@ -608,13 +712,6 @@ class DownloadManager extends ChangeNotifier {
     }
   }
 
-  Future<void> _resetDirectory(Directory dir) async {
-    if (await dir.exists()) {
-      await dir.delete(recursive: true);
-    }
-    await dir.create(recursive: true);
-  }
-
   Future<bool> _allFilesExist(List<String> paths) async {
     for (final path in paths) {
       if (!await File(path).exists()) {
@@ -808,6 +905,9 @@ enum ComicDownloadTaskStatus {
 
   /// 等待中
   pending,
+
+  /// 已暂停
+  paused,
 }
 
 /// 漫画下载队列中的任务信息，供 UI 展示。
