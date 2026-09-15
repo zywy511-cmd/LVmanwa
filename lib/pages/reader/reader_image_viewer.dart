@@ -262,7 +262,10 @@ class _ReaderImageViewerState extends State<_ReaderImageViewer> {
               _handleDoubleTap();
             }
           },
-          child: InteractiveViewer(
+          child: ReaderLongPressZoomSurface(
+            enabled: _user.reader.longPressZoomEnabled,
+            panSensitivity: _user.reader.longPressZoomPanSensitivity,
+            child: InteractiveViewer(
             transformationController: _transformationController,
             minScale: 1,
             maxScale: 5,
@@ -281,10 +284,11 @@ class _ReaderImageViewerState extends State<_ReaderImageViewer> {
               ),
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildIconButton({
     required IconData icon,

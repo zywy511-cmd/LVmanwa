@@ -4187,6 +4187,18 @@ abstract class AppLocalizations {
   /// **'到末页后直接拼接下一话，不重新加载'**
   String get readerContinuousReadingDesc;
 
+  /// No description provided for @readerLongPressZoom.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按放大'**
+  String get readerLongPressZoom;
+
+  /// No description provided for @readerLongPressZoomDesc.
+  ///
+  /// In zh, this message translates to:
+  /// **'长按图片放大查看细节，松手恢复'**
+  String get readerLongPressZoomDesc;
+
   /// No description provided for @readerAutoScroll.
   ///
   /// In zh, this message translates to:

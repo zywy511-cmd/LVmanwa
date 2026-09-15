@@ -28,7 +28,9 @@ import '../utils/image_load_stats.dart';
 import '../utils/network_error.dart';
 import '../utils/reading_history.dart';
 import '../utils/toast.dart';
+import '../widgets/pinch_zoomable.dart';
 import '../widgets/reader_status_overlay.dart';
+import 'reader/reader_long_press_zoom.dart';
 import 'chapter_comment_display.dart';
 import 'chapter_comments_sheet.dart';
 
@@ -92,6 +94,9 @@ class _ReaderPageState extends State<ReaderPage> {
   final _downloads = DownloadManager();
   final _user = UserManager();
   final _bookmarks = BookmarkStore();
+
+  /// 滚动模式整视图缩放控制器（捏合放大，上限 3x，参考上游 kira）。
+  final _scrollZoomController = PinchZoomController(maxScale: 3.0);
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
   final _scrollOffsetController = ScrollOffsetController();
@@ -510,6 +515,7 @@ class _ReaderPageState extends State<ReaderPage> {
     _autoScrollGeneration++;
     _autoScrollResumeTimer?.cancel();
     _pageController.dispose();
+    _scrollZoomController.dispose();
     SystemChrome.setEnabledSystemUIMode(
       SystemUiMode.manual,
       overlays: SystemUiOverlay.values,
@@ -1597,11 +1603,22 @@ class _ReaderPageState extends State<ReaderPage> {
     int? retryKey,
   }) {
     final key = retryKey ?? localIndex;
-    return _ReaderImageGesture(
+    final image = _ReaderImageGesture(
       key: ValueKey('reader-image-${chapter.uuid}-$localIndex'),
       onSingleTap: _isPageMode ? _handlePageModeTapAt : (_) => _toggleToolbar(),
       onDoubleTap: () => _openImageViewer(chapter, localIndex),
       child: _buildImage(chapter, localIndex, retryKey: key),
+    );
+    if (_isPageMode) return image;
+    // 滚动模式：长按放大单张图片（参考上游 kira）。
+    return ReaderLongPressZoomSurface(
+      enabled: _user.reader.longPressZoomEnabled,
+      panSensitivity: _user.reader.longPressZoomPanSensitivity,
+      contentScrollAxis: _isHorizontalScrollMode
+          ? Axis.horizontal
+          : Axis.vertical,
+      canStart: () => !_scrollZoomController.zoomed,
+      child: image,
     );
   }
 
@@ -2038,7 +2055,9 @@ class _ReaderPageState extends State<ReaderPage> {
             }
             return false;
           },
-          child: ScrollablePositionedList.separated(
+          child: PinchZoomable(
+            controller: _scrollZoomController,
+            child: ScrollablePositionedList.separated(
             key: ValueKey(
               _continuousReading
                   ? 'scroll-continuous-$_scrollWidgetVersion'
@@ -2131,6 +2150,7 @@ class _ReaderPageState extends State<ReaderPage> {
               }
             },
           ),
+        ),
         ),
       ),
     );

@@ -192,6 +192,17 @@ class _ReaderSettingsPanelState extends State<_ReaderSettingsPanel> {
                   ),
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
+                    title: Text(l10n.readerLongPressZoom),
+                    subtitle: Text(l10n.readerLongPressZoomDesc),
+                    value: _user.reader.longPressZoomEnabled,
+                    onChanged: (v) {
+                      _user.reader.setLongPressZoomEnabled(v);
+                      setState(() {});
+                      widget.onChanged();
+                    },
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
                     title: Text(l10n.readerAutoScroll),
                     subtitle: Text(l10n.readerAutoScrollDesc),
                     value: _user.readerAutoScrollEnabled,

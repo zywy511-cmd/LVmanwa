@@ -2290,6 +2290,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get readerContinuousReadingDesc => '到末页后直接拼接下一话，不重新加载';
 
   @override
+  String get readerLongPressZoom => '长按放大';
+
+  @override
+  String get readerLongPressZoomDesc => '长按图片放大查看细节，松手恢复';
+
+  @override
   String get readerAutoScroll => '自动滚动';
 
   @override

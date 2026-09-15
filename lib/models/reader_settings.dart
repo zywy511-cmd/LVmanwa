@@ -37,6 +37,9 @@ class ReaderSettings extends PrefsStore {
   static const _keyStatusOverlayBattery = 'reader_status_overlay_battery';
   static const _keyStatusOverlayNetwork = 'reader_status_overlay_network';
   static const _keyStatusOverlayPage = 'reader_status_overlay_page';
+  static const _keyLongPressZoomEnabled = 'reader_long_press_zoom_enabled';
+  static const _keyLongPressZoomPanSensitivity =
+      'reader_long_press_zoom_pan_sensitivity';
 
   // ── Fields ─────────────────────────────────────────────────────────
 
@@ -63,6 +66,8 @@ class ReaderSettings extends PrefsStore {
   bool _statusOverlayBattery = true;
   bool _statusOverlayNetwork = true;
   bool _statusOverlayPage = false;
+  bool _longPressZoomEnabled = true;
+  double _longPressZoomPanSensitivity = 2.0;
 
   // ── Getters ────────────────────────────────────────────────────────
 
@@ -89,6 +94,8 @@ class ReaderSettings extends PrefsStore {
   bool get statusOverlayBattery => _statusOverlayBattery;
   bool get statusOverlayNetwork => _statusOverlayNetwork;
   bool get statusOverlayPage => _statusOverlayPage;
+  bool get longPressZoomEnabled => _longPressZoomEnabled;
+  double get longPressZoomPanSensitivity => _longPressZoomPanSensitivity;
 
   // ── Init (called from UserManager.init) ────────────────────────────
 
@@ -123,6 +130,9 @@ class ReaderSettings extends PrefsStore {
     _statusOverlayBattery = prefs.getBool(_keyStatusOverlayBattery) ?? true;
     _statusOverlayNetwork = prefs.getBool(_keyStatusOverlayNetwork) ?? true;
     _statusOverlayPage = prefs.getBool(_keyStatusOverlayPage) ?? false;
+    _longPressZoomEnabled = prefs.getBool(_keyLongPressZoomEnabled) ?? true;
+    _longPressZoomPanSensitivity =
+        prefs.getDouble(_keyLongPressZoomPanSensitivity) ?? 2.0;
   }
 
   // ── Setters ────────────────────────────────────────────────────────
@@ -243,5 +253,15 @@ class ReaderSettings extends PrefsStore {
   Future<void> setStatusOverlayPage(bool value) async {
     _statusOverlayPage = value;
     await setBool(_keyStatusOverlayPage, value);
+  }
+
+  Future<void> setLongPressZoomEnabled(bool value) async {
+    _longPressZoomEnabled = value;
+    await setBool(_keyLongPressZoomEnabled, value);
+  }
+
+  Future<void> setLongPressZoomPanSensitivity(double value) async {
+    _longPressZoomPanSensitivity = value;
+    await setDouble(_keyLongPressZoomPanSensitivity, value);
   }
 }
