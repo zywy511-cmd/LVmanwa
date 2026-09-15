@@ -293,20 +293,114 @@ class _LocalContentListPageState extends State<LocalContentListPage> {
           );
 
     if (widget.embedded) {
-      if (!_isDesktopPlatform) return body;
+      // 手机端 embedded：无 AppBar，多选删除通过底部操作条完成
+      // （长按卡片或点选进入选择模式）。
+      final l10n = AppLocalizations.of(context)!;
+      final content = _isDesktopPlatform
+          ? Stack(
+              children: [
+                body,
+                Positioned(
+                  right: 16,
+                  bottom: 16,
+                  child: FloatingActionButton.extended(
+                    heroTag: '${widget.heroTagPrefix}_open_folder',
+                    onPressed: _openDownloadFolder,
+                    icon: const Icon(Icons.folder_open, size: 20),
+                    label: Text(
+                      AppLocalizations.of(context)!.openDownloadFolder,
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : body;
+      if (!_selectionMode) {
+        // 非选择模式：右上角悬浮「批量管理」入口（手机端无 AppBar）。
+        if (!_isDesktopPlatform && items.isNotEmpty) {
+          return Stack(
+            children: [
+              content,
+              Positioned(
+                top: 8,
+                right: 8,
+                child: SafeArea(
+                  bottom: false,
+                  child: Material(
+                    color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
+                    shape: const CircleBorder(),
+                    elevation: 2,
+                    child: IconButton(
+                      onPressed: () => setState(() => _selectionMode = true),
+                      icon: const Icon(Icons.checklist, size: 20),
+                      tooltip: l10n.batchManage,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        }
+        return content;
+      }
+      // 选择模式：底部操作条（全选 / 删除整部 / 取消）。
       return Stack(
         children: [
-          body,
+          content,
           Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton.extended(
-              heroTag: '${widget.heroTagPrefix}_open_folder',
-              onPressed: _openDownloadFolder,
-              icon: const Icon(Icons.folder_open, size: 20),
-              label: Text(
-                AppLocalizations.of(context)!.openDownloadFolder,
-                style: const TextStyle(fontSize: 13),
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: Material(
+                color: cs.surfaceContainerHigh,
+                elevation: 8,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: AppSpacing.xs,
+                  ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _selectedPathWords.isEmpty
+                            ? null
+                            : _deleteSelected,
+                        icon: Icon(
+                          Icons.delete_outline,
+                          color: _selectedPathWords.isEmpty
+                              ? null
+                              : cs.error,
+                        ),
+                        tooltip: l10n.deleteButton,
+                      ),
+                      Text(
+                        '${_selectedPathWords.length}',
+                        style: tt.labelLarge?.copyWith(color: cs.primary),
+                      ),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () => setState(() {
+                          _selectedPathWords
+                            ..clear()
+                            ..addAll(items.map((item) => item.pathWord));
+                        }),
+                        icon: const Icon(Icons.select_all, size: 18),
+                        label: Text(l10n.selectAll),
+                      ),
+                      IconButton(
+                        onPressed: () => setState(() {
+                          _selectionMode = false;
+                          _selectedPathWords.clear();
+                        }),
+                        icon: const Icon(Icons.close),
+                        tooltip: l10n.cancelButton,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
