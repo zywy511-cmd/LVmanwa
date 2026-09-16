@@ -285,7 +285,10 @@ class UserApi {
   }
 
   /// 拷贝漫画注册（App 接口 /api/v3/register，与登录同一套签名/设备指纹头）。
-  /// 用户名长度 6-36 位。成功后返回 results（token 为 null，需再登录）。
+  /// 用户名长度 6-36 位。
+  /// 注意：注册接口期望「明文密码」（与登录接口的 base64(pwd-salt) 编码不同），
+  /// 服务端会自行处理密码存储；若传编码密码会导致注册成功但无法登录。
+  /// 成功后返回 results（token 为 null，需再登录）。
   Future<Map<String, dynamic>> copyRegister({
     required String username,
     required String password,
@@ -298,8 +301,8 @@ class UserApi {
     final sig = _computeCopyAuthSignature(ts);
     final dt =
         '${now.year}.${now.month.toString().padLeft(2, '0')}.${now.day.toString().padLeft(2, '0')}';
+    // 注册接口传明文密码（salt 仍需带上，服务端兼容处理）
     final salt = Random().nextInt(9000) + 1000;
-    final encoded = base64Encode(utf8.encode('$password-$salt'));
 
     final headers = <String, dynamic>{
       'User-Agent': 'COPY/3.0.9',
@@ -332,7 +335,7 @@ class UserApi {
     final resp = await dio.post(
       'https://$apiHost/api/v3/register',
       data:
-          'username=$username&password=$encoded&salt=$salt&authorization=Token+',
+          'username=$username&password=$password&salt=$salt&authorization=Token+',
     );
 
     final data = resp.data;
