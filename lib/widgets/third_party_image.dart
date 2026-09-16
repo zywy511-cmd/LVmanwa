@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -38,16 +40,38 @@ class ThirdPartyImageProvider extends ImageProvider<ThirdPartyImageProvider> {
 
   ThirdPartyImageProvider(this.url, this.request) : cacheKey = url;
 
-  static final Dio _dio = AppDio.create(
-    source: 'tp-image',
-    enableRateLimit: false,
-    options: BaseOptions(
-      connectTimeout: const Duration(seconds: 20),
-      receiveTimeout: const Duration(seconds: 30),
-      responseType: ResponseType.bytes,
-      validateStatus: (_) => true,
-    ),
-  );
+  static final Dio _dio = () {
+    final dio = AppDio.create(
+      source: 'tp-image',
+      enableRateLimit: false,
+      options: BaseOptions(
+        connectTimeout: const Duration(seconds: 20),
+        receiveTimeout: const Duration(seconds: 30),
+        responseType: ResponseType.bytes,
+        validateStatus: (_) => true,
+      ),
+    );
+    // 第三方图片 CDN 个别节点证书过期（例如 mwfimsvfast40.cc），
+    // 导致封面/章节图握手失败。这里仅放行「证书已过期」一种情况，
+    // hostname 不匹配、自签名等其它校验错误仍然拒绝，不做全局放开。
+    if (!kIsWeb) {
+      dio.httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: () {
+          final client = HttpClient();
+          client.badCertificateCallback = (cert, host, port) {
+            if (cert == null) return false;
+            try {
+              return cert.endValidity.isBefore(DateTime.now());
+            } catch (_) {
+              return false;
+            }
+          };
+          return client;
+        },
+      );
+    }
+    return dio;
+  }();
 
   @override
   Future<ThirdPartyImageProvider> obtainKey(ImageConfiguration configuration) =>
