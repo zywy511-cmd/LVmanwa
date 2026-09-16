@@ -1050,6 +1050,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get networkCopyLoginDomainHint => '拷贝账号登录接口使用的域名，登录失败时可切换重试';
 
   @override
+  String get networkCopyLoginDomainDefault => '默认';
+
+  @override
+  String get networkCopyLoginDomainCustom => '自定义';
+
+  @override
+  String get networkCopyLoginDomainEditTitle => '修改登录域名';
+
+  @override
+  String get networkCopyLoginDomainDuplicate => '该域名已在列表中';
+
+  @override
   String get networkCopyAppVersion => 'COPY 请求版本号';
 
   @override
@@ -1569,6 +1581,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get profileRegisterHotMangaAccountButton => '注册热辣漫画账号';
+
+  @override
+  String get profileRegisterCopyMangaAccountButton => '注册拷贝漫画账号';
+
+  @override
+  String get profileCopyUsernameLengthHint => '用户名长度为 6-36 位，密码用于登录拷贝漫画账号';
 
   @override
   String get profileLoginButton => '登录';
@@ -4664,6 +4682,18 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
   String get networkCopyLoginDomainHint => '拷貝帳號登入介面使用的域名，登入失敗時可切換重試';
 
   @override
+  String get networkCopyLoginDomainDefault => '默認';
+
+  @override
+  String get networkCopyLoginDomainCustom => '自定義';
+
+  @override
+  String get networkCopyLoginDomainEditTitle => '修改登入域名';
+
+  @override
+  String get networkCopyLoginDomainDuplicate => '該域名已在列表中';
+
+  @override
   String get networkCopyAppVersion => 'COPY 請求版本號';
 
   @override
@@ -5183,6 +5213,12 @@ class AppLocalizationsZhHant extends AppLocalizationsZh {
 
   @override
   String get profileRegisterHotMangaAccountButton => '註冊熱辣漫畫帳號';
+
+  @override
+  String get profileRegisterCopyMangaAccountButton => '註冊拷貝漫畫帳號';
+
+  @override
+  String get profileCopyUsernameLengthHint => '用戶名長度為 6-36 位，密碼用於登入拷貝漫畫帳號';
 
   @override
   String get profileLoginButton => '登入';

@@ -7,6 +7,7 @@ import '../api/api_transport.dart'
         routes,
         defaultCopyApiHost,
         defaultCopyAppVersion,
+        defaultCopyLoginHost,
         copyLoginHostOptions;
 import '../api/third_party/manwaba_source.dart';
 import '../api/third_party/waman3_source.dart';
@@ -41,6 +42,7 @@ class _NetworkPageState extends State<NetworkPage>
   final _proxyAddressController = TextEditingController();
   final _copyApiHostController = TextEditingController();
   final _copyAppVersionController = TextEditingController();
+  final _customLoginHostController = TextEditingController();
 
   bool _testingLatency = false;
   bool _refreshingSystemProxy = false;
@@ -93,6 +95,7 @@ class _NetworkPageState extends State<NetworkPage>
     _proxyAddressController.dispose();
     _copyApiHostController.dispose();
     _copyAppVersionController.dispose();
+    _customLoginHostController.dispose();
     super.dispose();
   }
 
@@ -1032,22 +1035,7 @@ class _NetworkPageState extends State<NetworkPage>
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          DropdownButtonFormField<String>(
-            initialValue: _user.copyLoginHost,
-            decoration: InputDecoration(
-              labelText: l10n.networkCopyLoginDomain,
-              helperText: l10n.networkCopyLoginDomainHint,
-              prefixIcon: const Icon(Icons.login_rounded),
-              border: const OutlineInputBorder(),
-            ),
-            items: [
-              for (final host in copyLoginHostOptions)
-                DropdownMenuItem<String>(value: host, child: Text(host)),
-            ],
-            onChanged: (value) {
-              if (value != null) _setCopyLoginHost(value);
-            },
-          ),
+          _buildCopyLoginHostSection(l10n, tt, cs),
           const SizedBox(height: AppSpacing.md),
           TextField(
             controller: _copyApiHostController,
@@ -1077,6 +1065,290 @@ class _NetworkPageState extends State<NetworkPage>
         ],
       ),
     );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 拷贝登录域名：内置 + 自定义列表，点选切换；自定义项可编辑/删除。
+  // ─────────────────────────────────────────────────────────────
+
+  Widget _buildCopyLoginHostSection(
+    AppLocalizations l10n,
+    TextTheme tt,
+    ColorScheme cs,
+  ) {
+    final current = _user.copyLoginHost;
+    final entries = <(String, bool)>[
+      for (final host in copyLoginHostOptions) (host, false),
+      for (final host in _user.customCopyLoginHosts) (host, true),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.networkCopyLoginDomain,
+          style: tt.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          l10n.networkCopyLoginDomainHint,
+          style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: AppRadius.smR,
+            border: Border.all(color: cs.outline),
+          ),
+          child: ClipRRect(
+            borderRadius: AppRadius.smR,
+            child: Column(
+              children: [
+                for (var i = 0; i < entries.length; i++)
+                  _buildLoginHostRow(
+                    entries[i].$1,
+                    isCustom: entries[i].$2,
+                    isSelected: entries[i].$1 == current,
+                    showDivider: i > 0,
+                    l10n: l10n,
+                    tt: tt,
+                    cs: cs,
+                  ),
+                _buildLoginHostAddRow(l10n, tt, cs),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLoginHostRow(
+    String host, {
+    required bool isCustom,
+    required bool isSelected,
+    required bool showDivider,
+    required AppLocalizations l10n,
+    required TextTheme tt,
+    required ColorScheme cs,
+  }) {
+    final label = isCustom
+        ? l10n.networkCopyLoginDomainCustom
+        : (host == defaultCopyLoginHost
+              ? l10n.networkCopyLoginDomainDefault
+              : null);
+
+    return Column(
+      children: [
+        if (showDivider)
+          Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.6)),
+        Material(
+          color: isSelected
+              ? Color.alphaBlend(cs.primary.withValues(alpha: 0.08), cs.surface)
+              : Colors.transparent,
+          child: InkWell(
+            onTap: () => _setCopyLoginHost(host),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
+              child: Row(
+                children: [
+                  Icon(
+                    isSelected
+                        ? Icons.radio_button_checked_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    size: 20,
+                    color: isSelected ? cs.primary : cs.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Text(
+                      host,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tt.bodyMedium?.copyWith(
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: isSelected ? cs.primary : cs.onSurface,
+                      ),
+                    ),
+                  ),
+                  if (label != null) ...[
+                    const SizedBox(width: AppSpacing.sm),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isCustom
+                            ? cs.secondaryContainer
+                            : cs.surfaceContainerHighest,
+                        borderRadius: AppRadius.xsR,
+                      ),
+                      child: Text(
+                        label,
+                        style: tt.labelSmall?.copyWith(
+                          color: isCustom
+                              ? cs.onSecondaryContainer
+                              : cs.onSurfaceVariant,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                  if (isCustom) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    _hostRowAction(
+                      icon: Icons.edit_outlined,
+                      tooltip: l10n.aiConfigEdit,
+                      color: cs.onSurfaceVariant,
+                      onTap: () => _editCustomLoginHost(host),
+                    ),
+                    _hostRowAction(
+                      icon: Icons.delete_outline_rounded,
+                      tooltip: l10n.deleteButton,
+                      color: cs.error,
+                      onTap: () => _removeCustomLoginHost(host),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _hostRowAction({
+    required IconData icon,
+    required String tooltip,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return IconButton(
+      onPressed: onTap,
+      icon: Icon(icon, size: 18),
+      tooltip: tooltip,
+      color: color,
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      padding: EdgeInsets.zero,
+    );
+  }
+
+  Widget _buildLoginHostAddRow(
+    AppLocalizations l10n,
+    TextTheme tt,
+    ColorScheme cs,
+  ) {
+    return Column(
+      children: [
+        Divider(height: 1, color: cs.outlineVariant.withValues(alpha: 0.6)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _customLoginHostController,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.url,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _addCustomLoginHost(),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              FilledButton.tonalIcon(
+                onPressed: _addCustomLoginHost,
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  visualDensity: VisualDensity.compact,
+                ),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: Text(l10n.commentSettingsAddButton),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _addCustomLoginHost() async {
+    final value = _customLoginHostController.text.trim();
+    final ok = await _user.addCustomCopyLoginHost(value);
+    if (!mounted) return;
+    if (!ok) {
+      showToast(
+        context,
+        AppLocalizations.of(context)!.networkCopyLoginDomainDuplicate,
+        isError: true,
+      );
+      return;
+    }
+    _customLoginHostController.clear();
+    // 添加后自动选中新域名。
+    await _user.setCopyLoginHost(value);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _removeCustomLoginHost(String host) async {
+    await _user.removeCustomCopyLoginHost(host);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  Future<void> _editCustomLoginHost(String host) async {
+    final l10n = AppLocalizations.of(context)!;
+    final controller = TextEditingController(text: host);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(l10n.networkCopyLoginDomainEditTitle),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          keyboardType: TextInputType.url,
+          textInputAction: TextInputAction.done,
+          onSubmitted: (value) => Navigator.pop(ctx, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(l10n.cancelButton),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: Text(l10n.commentSettingsSaveButton),
+          ),
+        ],
+      ),
+    );
+    if (result == null) {
+      controller.dispose();
+      return;
+    }
+    controller.dispose();
+    if (!mounted) return;
+
+    final ok = await _user.updateCustomCopyLoginHost(host, result);
+    if (!mounted) return;
+    if (!ok) {
+      showToast(
+        context,
+        AppLocalizations.of(context)!.networkCopyLoginDomainDuplicate,
+        isError: true,
+      );
+      return;
+    }
+    setState(() {});
   }
 
   Widget _buildAdvancedActions(ColorScheme cs) {

@@ -314,6 +314,20 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// 拷贝漫画应用内注册：注册成功后回填账号密码并提示登录。
+  Future<void> _goCopyRegister() async {
+    final result = await context.pushNamed<RegisterPrefill>(
+      AppRoutes.copyRegister,
+    );
+    if (result == null || !mounted) return;
+    _usernameCtrl.text = result.username;
+    _passwordCtrl.text = result.password;
+    showToast(
+      context,
+      AppLocalizations.of(context)!.profileRegisterSuccessLoginToast,
+    );
+  }
+
   Future<void> _goRegister() async {
     final result = await context.pushNamed<RegisterPrefill>(AppRoutes.register);
     if (result == null || !mounted) return;
@@ -571,6 +585,16 @@ class _LoginPageState extends State<LoginPage> {
                   shape: RoundedRectangleBorder(
                     borderRadius: AppRadius.mdR,
                   ),
+                ),
+              ),
+            ],
+            // 拷贝漫画：应用内注册入口（参考热辣注册入口，调用 COPY /api/v3/register）
+            if (_useCopyLogin) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Center(
+                child: TextButton(
+                  onPressed: _loading ? null : _goCopyRegister,
+                  child: Text(l10n.profileRegisterButton),
                 ),
               ),
             ],

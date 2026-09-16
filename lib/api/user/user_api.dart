@@ -284,6 +284,79 @@ class UserApi {
     );
   }
 
+  /// 拷贝漫画注册（App 接口 /api/v3/register，与登录同一套签名/设备指纹头）。
+  /// 用户名长度 6-36 位。成功后返回 results（token 为 null，需再登录）。
+  Future<Map<String, dynamic>> copyRegister({
+    required String username,
+    required String password,
+  }) async {
+    // 与登录一致：节流 + 设备指纹 + 签名头
+    await _copyThrottle();
+    final fp = await _CopyDeviceFingerprint.load();
+    final now = DateTime.now();
+    final ts = (now.millisecondsSinceEpoch ~/ 1000).toString();
+    final sig = _computeCopyAuthSignature(ts);
+    final dt =
+        '${now.year}.${now.month.toString().padLeft(2, '0')}.${now.day.toString().padLeft(2, '0')}';
+    final salt = Random().nextInt(9000) + 1000;
+    final encoded = base64Encode(utf8.encode('$password-$salt'));
+
+    final headers = <String, dynamic>{
+      'User-Agent': 'COPY/3.0.9',
+      'source': 'copyApp',
+      'deviceinfo': fp.deviceinfo,
+      'dt': dt,
+      'platform': '3',
+      'referer': 'com.copymanga.app-3.0.9',
+      'version': '3.0.9',
+      'device': fp.device,
+      'pseudoid': fp.pseudoid,
+      'Accept': 'application/json',
+      'region': '0',
+      'authorization': 'Token',
+      'umstring': _copyUmstring,
+      'x-auth-timestamp': ts,
+      'x-auth-signature': sig,
+      'Content-Type': 'application/x-www-form-urlencoded;charset=utf-8',
+    };
+
+    final dio = AppDio.create(
+      source: 'copy_register',
+      options: BaseOptions(
+        validateStatus: (_) => true,
+        headers: headers,
+      ),
+    );
+
+    final apiHost = _t.user.copyApiHost;
+    final resp = await dio.post(
+      'https://$apiHost/api/v3/register',
+      data:
+          'username=$username&password=$encoded&salt=$salt&authorization=Token+',
+    );
+
+    final data = resp.data;
+    if (data is Map && data['code'] == 200) {
+      return Map<String, dynamic>.from(data['results'] ?? const {});
+    }
+
+    String? serverMessage;
+    if (data is Map) {
+      final raw = (data['detail'] ?? data['message'])?.toString().trim();
+      if (raw != null && raw.isNotEmpty) serverMessage = raw;
+    }
+    final message =
+        serverMessage ??
+        (data is Map
+            ? 'Register failed (code: ${data['code'] ?? resp.statusCode ?? 'unknown'})'
+            : 'Register failed (HTTP ${resp.statusCode ?? 'unknown'})');
+    NetworkError.throwBadResponse(
+      response: resp,
+      message: message,
+      source: 'copy_register',
+    );
+  }
+
   /// 获取个人信息
   Future<Map<String, dynamic>> getUserInfo() async {
     return _t.get('/api/v3/member/info');

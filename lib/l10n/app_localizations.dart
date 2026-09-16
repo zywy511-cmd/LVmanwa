@@ -1963,6 +1963,30 @@ abstract class AppLocalizations {
   /// **'拷贝账号登录接口使用的域名，登录失败时可切换重试'**
   String get networkCopyLoginDomainHint;
 
+  /// No description provided for @networkCopyLoginDomainDefault.
+  ///
+  /// In zh, this message translates to:
+  /// **'默认'**
+  String get networkCopyLoginDomainDefault;
+
+  /// No description provided for @networkCopyLoginDomainCustom.
+  ///
+  /// In zh, this message translates to:
+  /// **'自定义'**
+  String get networkCopyLoginDomainCustom;
+
+  /// No description provided for @networkCopyLoginDomainEditTitle.
+  ///
+  /// In zh, this message translates to:
+  /// **'修改登录域名'**
+  String get networkCopyLoginDomainEditTitle;
+
+  /// No description provided for @networkCopyLoginDomainDuplicate.
+  ///
+  /// In zh, this message translates to:
+  /// **'该域名已在列表中'**
+  String get networkCopyLoginDomainDuplicate;
+
   /// No description provided for @networkCopyAppVersion.
   ///
   /// In zh, this message translates to:
@@ -2885,6 +2909,18 @@ abstract class AppLocalizations {
   /// In zh, this message translates to:
   /// **'注册热辣漫画账号'**
   String get profileRegisterHotMangaAccountButton;
+
+  /// No description provided for @profileRegisterCopyMangaAccountButton.
+  ///
+  /// In zh, this message translates to:
+  /// **'注册拷贝漫画账号'**
+  String get profileRegisterCopyMangaAccountButton;
+
+  /// No description provided for @profileCopyUsernameLengthHint.
+  ///
+  /// In zh, this message translates to:
+  /// **'用户名长度为 6-36 位，密码用于登录拷贝漫画账号'**
+  String get profileCopyUsernameLengthHint;
 
   /// No description provided for @profileLoginButton.
   ///

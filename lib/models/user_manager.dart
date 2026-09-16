@@ -188,6 +188,7 @@ class UserManager extends ChangeNotifier {
   static const _keyManwabaDetectedImage = 'tp_manwaba_detected_image';
   static const _keyCopyApiHost = 'copy_api_host';
   static const _keyCopyLoginHost = 'copy_login_host';
+  static const _keyCustomCopyLoginHosts = 'copy_login_host_custom';
   static const _keyCopyAppVersion = 'copy_app_version';
   static const _keyCopyAutoUpdate = 'copy_auto_update';
   static const _keyCopySettingsUpdatedAt = 'copy_settings_updated_at';
@@ -281,6 +282,7 @@ class UserManager extends ChangeNotifier {
   String _manwabaDetectedImageHost = '';
   String _copyApiHost = defaultCopyApiHost;
   String _copyLoginHost = defaultCopyLoginHost;
+  List<String> _customCopyLoginHosts = [];
   String _copyAppVersion = defaultCopyAppVersion;
   bool _copyAutoUpdate = true;
   int? _copySettingsUpdatedAt;
@@ -406,6 +408,18 @@ class UserManager extends ChangeNotifier {
   String get manwabaDetectedImageHost => _manwabaDetectedImageHost;
   String get copyApiHost => _copyApiHost;
   String get copyLoginHost => _copyLoginHost;
+
+  /// 用户自定义的拷贝登录域名（内置选项之外的）。
+  List<String> get customCopyLoginHosts =>
+      List.unmodifiable(_customCopyLoginHosts);
+
+  /// 全部可选域名：内置 + 自定义（去重）。
+  List<String> get copyLoginHostChoices => [
+        ...copyLoginHostOptions,
+        ..._customCopyLoginHosts.where(
+          (h) => !copyLoginHostOptions.contains(h),
+        ),
+      ];
   String get copyAppVersion => _copyAppVersion;
   bool get copyAutoUpdate => _copyAutoUpdate;
   int? get copySettingsUpdatedAt => _copySettingsUpdatedAt;
@@ -637,6 +651,8 @@ class UserManager extends ChangeNotifier {
         prefs.getString(_keyManwabaDetectedImage)?.trim() ?? '';
     _copyApiHost = normalizeCopyApiHost(prefs.getString(_keyCopyApiHost));
     _copyLoginHost = normalizeCopyLoginHost(prefs.getString(_keyCopyLoginHost));
+    _customCopyLoginHosts =
+        prefs.getStringList(_keyCustomCopyLoginHosts) ?? [];
     _copyAppVersion = normalizeCopyAppVersion(
       prefs.getString(_keyCopyAppVersion),
     );
@@ -1420,6 +1436,59 @@ class UserManager extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_keyCopyLoginHost, normalized);
     notifyListeners();
+  }
+
+  /// 添加自定义登录域名（不做合法性校验，由用户自己负责）。
+  /// 空值或与现有条目重复（含内置）返回 false。
+  Future<bool> addCustomCopyLoginHost(String value) async {
+    final host = value.trim();
+    if (host.isEmpty || copyLoginHostChoices.contains(host)) return false;
+
+    _customCopyLoginHosts = [..._customCopyLoginHosts, host];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyCustomCopyLoginHosts, _customCopyLoginHosts);
+    notifyListeners();
+    return true;
+  }
+
+  /// 删除自定义登录域名。若删的是当前启用域名，回落到内置默认。
+  Future<void> removeCustomCopyLoginHost(String host) async {
+    if (!_customCopyLoginHosts.contains(host)) return;
+
+    _customCopyLoginHosts = _customCopyLoginHosts
+        .where((e) => e != host)
+        .toList(growable: true);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyCustomCopyLoginHosts, _customCopyLoginHosts);
+    if (_copyLoginHost == host) {
+      _copyLoginHost = defaultCopyLoginHost;
+      await prefs.setString(_keyCopyLoginHost, _copyLoginHost);
+    }
+    notifyListeners();
+  }
+
+  /// 编辑自定义登录域名；新值与其它条目重复返回 false。
+  Future<bool> updateCustomCopyLoginHost(String oldHost, String next) async {
+    if (!_customCopyLoginHosts.contains(oldHost)) return false;
+    final host = next.trim();
+    if (host.isEmpty) return false;
+    if (host == oldHost) return true;
+    if (copyLoginHostChoices.where((e) => e != oldHost).contains(host)) {
+      return false;
+    }
+
+    _customCopyLoginHosts = [
+      for (final h in _customCopyLoginHosts)
+        if (h == oldHost) host else h,
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_keyCustomCopyLoginHosts, _customCopyLoginHosts);
+    if (_copyLoginHost == oldHost) {
+      _copyLoginHost = host;
+      await prefs.setString(_keyCopyLoginHost, host);
+    }
+    notifyListeners();
+    return true;
   }
 
   Future<void> setCopyAppVersion(String value) async {

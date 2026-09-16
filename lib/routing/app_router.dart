@@ -32,6 +32,7 @@ import '../pages/profile_page.dart'
 import '../pages/ranking_page.dart';
 import '../pages/reader_page.dart';
 import '../pages/recommend_page.dart';
+import '../pages/copy_register_page.dart' show CopyRegisterPage;
 import '../pages/register_page.dart' show RegisterPage;
 import '../pages/search_page.dart';
 import '../pages/webview_login_page.dart';
@@ -64,6 +65,7 @@ final class AppRoutes {
   static const localAnimeDetail = 'local_anime_detail';
   static const login = 'login';
   static const register = 'register';
+  static const copyRegister = 'copy_register';
   static const webviewLogin = 'webview_login';
   static const general = 'general';
   static const appearance = 'appearance';
@@ -360,6 +362,13 @@ GoRouter createAppRouter() {
         path: '/register',
         name: AppRoutes.register,
         builder: (_, _) => const RegisterPage(),
+        routes: [
+          GoRoute(
+            path: '/copy-register',
+            name: AppRoutes.copyRegister,
+            builder: (_, _) => const CopyRegisterPage(),
+          ),
+        ],
       ),
       GoRoute(
         path: '/login/webview',
