@@ -1,0 +1,66 @@
+name: Build iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+
+env:
+  FLUTTER_VERSION: "3.44.0"
+
+jobs:
+  build-ios:
+    name: Build iOS IPA (No Code Sign)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Pod install
+        run: cd ios && pod install && cd ..
+
+      - name: Build iOS (no codesign)
+        env:
+          DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
+          DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+        run: >
+          flutter build ios --release --no-codesign
+          --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}"
+          --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
+
+      - name: Create IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: Runner.app not found!"
+            find build/ios -name "*.app" -type d
+            exit 1
+          fi
+          echo "App found at: $APP_PATH"
+          echo "App size: $(du -sh "$APP_PATH" | cut -f1)"
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qr LVCP.ipa Payload
+          rm -rf Payload
+          echo "IPA created successfully"
+          echo "IPA size: $(du -sh LVCP.ipa | cut -f1)"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ios-ipa
+          path: LVCP.ipa
+          retention-days: 30
+          if-no-files-found: error
