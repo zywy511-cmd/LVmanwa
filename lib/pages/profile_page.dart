@@ -376,37 +376,6 @@ class _ProfilePageState extends State<ProfilePage> {
                             trailing: const Icon(Icons.chevron_right),
                             onTap: () => context.pushNamed(AppRoutes.network),
                           ),
-                          const Divider(height: 1, indent: 16, endIndent: 16),
-                          ValueListenableBuilder<int>(
-                            valueListenable:
-                                RemoteNoticeService.unreadActiveCount,
-                            builder: (context, count, _) {
-                              return ListTile(
-                                leading: Stack(
-                                  clipBehavior: Clip.none,
-                                  children: [
-                                    const _SettingIcon(
-                                      icon: Icons.notifications_active_outlined,
-                                      color: _noticeCenterColor,
-                                    ),
-                                    if (count > 0)
-                                      Positioned(
-                                        right: -1,
-                                        top: -1,
-                                        child: _NoticeRedDot(
-                                          color: _noticeCenterColor,
-                                          borderColor: cs.surfaceContainerLow,
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                                title: Text(l10n.noticeCenterTitle),
-                                trailing: const Icon(Icons.chevron_right),
-                                onTap: () =>
-                                    context.pushNamed(AppRoutes.noticeCenter),
-                              );
-                            },
-                          ),
                         ],
                       ),
                     ),

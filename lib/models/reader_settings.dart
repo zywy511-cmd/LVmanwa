@@ -59,8 +59,8 @@ class ReaderSettings extends PrefsStore {
   bool _continuousReading = true;
   bool _viewerAutoRotateLandscape = false;
   int _viewerLandscapeRotation = 1;
-  int _imageLoadTimeout = 15;
-  int _imageRetryCount = 1;
+  int _imageLoadTimeout = 8;
+  int _imageRetryCount = 4;
   bool _statusOverlay = false;
   bool _statusOverlayTime = true;
   bool _statusOverlayBattery = true;
@@ -123,8 +123,8 @@ class ReaderSettings extends PrefsStore {
         prefs.getBool(_keyViewerAutoRotateLandscape) ?? false;
     final savedRotation = prefs.getInt(_keyViewerLandscapeRotation) ?? 1;
     _viewerLandscapeRotation = savedRotation < 0 ? -1 : 1;
-    _imageLoadTimeout = prefs.getInt(_keyImageLoadTimeout) ?? 15;
-    _imageRetryCount = prefs.getInt(_keyImageRetryCount) ?? 1;
+    _imageLoadTimeout = prefs.getInt(_keyImageLoadTimeout) ?? 8;
+    _imageRetryCount = prefs.getInt(_keyImageRetryCount) ?? 4;
     _statusOverlay = prefs.getBool(_keyStatusOverlay) ?? false;
     _statusOverlayTime = prefs.getBool(_keyStatusOverlayTime) ?? true;
     _statusOverlayBattery = prefs.getBool(_keyStatusOverlayBattery) ?? true;
