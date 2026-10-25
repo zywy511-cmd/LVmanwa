@@ -245,8 +245,8 @@ class UserManager extends ChangeNotifier {
   bool _readerContinuousReading = true;
   bool _imageViewerAutoRotateLandscape = false;
   int _imageViewerLandscapeRotation = 1;
-  int _imageLoadTimeout = 15; // 秒
-  int _imageRetryCount = 1;
+  int _imageLoadTimeout = 8; // 秒
+  int _imageRetryCount = 4;
   bool _commentCompactLayout = true;
   bool _commentShowAvatar = true;
   bool _commentShowUserName = true;
@@ -605,8 +605,8 @@ class UserManager extends ChangeNotifier {
     _imageViewerLandscapeRotation = savedImageViewerLandscapeRotation < 0
         ? -1
         : 1;
-    _imageLoadTimeout = prefs.getInt(_keyImageLoadTimeout) ?? 15;
-    _imageRetryCount = prefs.getInt(_keyImageRetryCount) ?? 1;
+    _imageLoadTimeout = prefs.getInt(_keyImageLoadTimeout) ?? 8;
+    _imageRetryCount = prefs.getInt(_keyImageRetryCount) ?? 4;
     _commentCompactLayout = prefs.getBool(_keyCommentCompactLayout) ?? true;
     _commentShowAvatar = prefs.getBool(_keyCommentShowAvatar) ?? true;
     _commentShowUserName = prefs.getBool(_keyCommentShowUserName) ?? true;
