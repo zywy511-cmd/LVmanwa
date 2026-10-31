@@ -186,11 +186,16 @@ class ThirdPartyDownloadManager {
       throw Exception('HTTP ${res.statusCode}');
     }
 
-    final bytes = await consolidateHttpClientResponseBytes(res);
-    var finalBytes = bytes;
+    // 读取 HTTP 响应所有字节
+    final bytes = await res.fold<List<int>>([], (previous, element) {
+      previous.addAll(element);
+      return previous;
+    });
+    final uint8Bytes = Uint8List.fromList(bytes);
+    var finalBytes = uint8Bytes;
     final decryptor = request.decryptor;
     if (decryptor != null) {
-      finalBytes = decryptor(bytes);
+      finalBytes = decryptor(uint8Bytes);
     }
 
     final file = File(savePath);

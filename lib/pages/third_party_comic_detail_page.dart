@@ -544,7 +544,7 @@ class _DownloadDialogState extends State<_DownloadDialog> {
       if (source == null) throw Exception('未知漫源');
 
       // 先获取章节图片列表
-      final images = await source.loadChapterImages(widget.comicId, widget.chapter.id);
+      final images = await source.loadEp(widget.comicId, widget.chapter.id);
 
       if (!mounted) return;
 
