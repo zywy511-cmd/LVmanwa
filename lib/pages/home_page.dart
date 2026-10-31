@@ -79,11 +79,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   void initState() {
     super.initState();
     _user.addListener(_onUserChanged);
-    // 第三方漫源主页入口已移除：若之前停在漫屋3/漫屋吧，重置回默认源，
-    // 避免主页卡在第三方源且无法切回。
-    if (_isThirdPartySource) {
-      _user.setMangaHomeSource('hot');
-      _activeSource = 'hot';
+    // 仅保留第三方漫源（漫屋吧/漫屋3），若用户之前停在 hot/copy 则重置为 manwaba
+    if (!_isThirdPartySource) {
+      _user.setMangaHomeSource('manwaba');
+      _activeSource = 'manwaba';
     } else {
       _activeSource = _user.mangaHomeSource;
     }
@@ -104,16 +103,13 @@ class _HomePageState extends ConsumerState<HomePage> {
       _activeSource = _user.mangaHomeSource;
       _loading = true;
       _error = null;
-      _home = null;
-      _copyHome = null;
       _tpHome = null;
-      _loadFromCache();
       _load();
     }
     setState(() {});
   }
 
-  bool get _isCopySource => _user.mangaHomeSource == 'copy';
+  bool get _isCopySource => false; // 已移除拷贝源
 
   bool get _isThirdPartySource {
     final source = _user.mangaHomeSource;
@@ -124,86 +120,11 @@ class _HomePageState extends ConsumerState<HomePage> {
       ThirdPartySources.byKey(_user.mangaHomeSource);
 
   Future<void> _loadFromCache() async {
-    if (_isThirdPartySource) return; // 第三方源无磁盘缓存
-    if (_isCopySource) {
-      final cached = await _repo.loadBFromCache();
-      if (!mounted || cached == null || !_loading) return;
-      setState(() {
-        _copyHome = cached.home;
-        _loading = false;
-      });
-      return;
-    }
-    final cached = await _repo.loadAFromCache();
-    if (!mounted || cached == null || !_loading) return;
-    setState(() {
-      _home = cached.home;
-      _rankingPreview = cached.ranking;
-      _loading = false;
-    });
+    // 第三方源无磁盘缓存，直接走网络加载
   }
 
   Future<void> _load({bool forceRefresh = false}) async {
-    if (_isCopySource) return _loadCopy(forceRefresh: forceRefresh);
-    if (_isThirdPartySource) {
-      return _loadThirdParty(forceRefresh: forceRefresh);
-    }
-    final hasData = _home != null;
-    if (!hasData) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    } else {
-      setState(() => _refreshing = true);
-    }
-    try {
-      final data = await _repo.loadA();
-      if (!mounted) return;
-      setState(() {
-        _home = data.home;
-        _rankingPreview = data.ranking;
-        _loading = false;
-        _refreshing = false;
-      });
-    } catch (e) {
-      debugPrint('HomePage load error: $e');
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _refreshing = false;
-        _error = e.toString();
-      });
-    }
-  }
-
-  Future<void> _loadCopy({bool forceRefresh = false}) async {
-    final hasData = _copyHome != null;
-    if (!hasData) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    } else {
-      setState(() => _refreshing = true);
-    }
-    try {
-      final data = await _repo.loadB();
-      if (!mounted) return;
-      setState(() {
-        _copyHome = data.home;
-        _loading = false;
-        _refreshing = false;
-      });
-    } catch (e) {
-      debugPrint('HomePage copy load error: $e');
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _refreshing = false;
-        _error = e.toString();
-      });
-    }
+    return _loadThirdParty(forceRefresh: forceRefresh);
   }
 
   Future<void> _loadThirdParty({bool forceRefresh = false}) async {
@@ -258,10 +179,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     final screenWidth = MediaQuery.of(context).size.width;
     final contentWidth = screenWidth.clamp(0.0, 900.0);
     final hp = (screenWidth - contentWidth) / 2 + 16;
-    final home = _home;
-    final copyHome = _copyHome;
     final tpHome = _tpHome;
-    final isCopy = _isCopySource;
     final isTp = _isThirdPartySource;
 
     if (_loading) {
@@ -271,11 +189,7 @@ class _HomePageState extends ConsumerState<HomePage> {
       );
     }
 
-    final hasData = isCopy
-        ? copyHome != null
-        : isTp
-        ? tpHome != null
-        : home != null;
+    final hasData = isTp ? tpHome != null : false;
     if (_error != null && !hasData) {
       return Scaffold(
         floatingActionButton: _buildFabColumn(),
@@ -308,83 +222,8 @@ class _HomePageState extends ConsumerState<HomePage> {
         const SliverToBoxAdapter(child: LinearProgressIndicator(minHeight: 2)),
     ];
 
-    if (isCopy && copyHome != null) {
-      slivers.addAll(_buildCopySlivers(copyHome, hp));
-    } else if (isTp && tpHome != null) {
+    if (isTp && tpHome != null) {
       slivers.addAll(_buildThirdPartySlivers(tpHome, hp));
-    } else if (home != null) {
-      final bannerItems = home.banners
-          .map(_MangaBannerItem.fromBanner)
-          .where((item) => item.cover.isNotEmpty)
-          .toList();
-      if (bannerItems.isNotEmpty && _user.bannerVisible) {
-        slivers.add(
-          SliverToBoxAdapter(
-            child: _MangaBannerCarousel(
-              items: bannerItems,
-              hp: hp,
-              onTap: (comic) => _openComic(
-                comic,
-                ComicHeroTags.base(
-                  scope: 'home-banner',
-                  pathWord: comic.pathWord,
-                  index: 0,
-                ),
-              ),
-            ),
-          ),
-        );
-      }
-      if (home.recommendations.isNotEmpty) {
-        slivers.add(
-          _MangaSection(
-            title: AppLocalizations.of(context)!.hotRecommend,
-            icon: Icons.auto_awesome,
-            hp: hp,
-            onMore: () => context.pushNamed(AppRoutes.recommend),
-            child: _MangaHorizontalList(
-              items: home.recommendations,
-              onTap: _openComic,
-            ),
-          ),
-        );
-      }
-      if (_rankingPreview.isNotEmpty) {
-        slivers.add(
-          _SectionTitle(
-            title: AppLocalizations.of(context)!.comicRanking,
-            icon: Icons.leaderboard,
-            hp: hp,
-            onMore: () => context.pushNamed(AppRoutes.ranking),
-          ),
-        );
-        slivers.add(
-          SliverPadding(
-            padding: EdgeInsets.symmetric(horizontal: hp),
-            sliver: SliverGrid(
-              delegate: SliverChildBuilderDelegate((_, i) {
-                final comic = _rankingPreview[i];
-                final heroTagBase = ComicHeroTags.base(
-                  scope: 'home-ranking',
-                  pathWord: comic.pathWord,
-                  index: i,
-                );
-                return ComicCard(
-                  comic: comic,
-                  heroTagBase: heroTagBase,
-                  onTap: () => _openComic(comic, heroTagBase),
-                );
-              }, childCount: _rankingPreview.length),
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: _mangaHomeCardWidth,
-                childAspectRatio: _mangaHomeCardAspectRatio,
-                mainAxisSpacing: _mangaHomeCardSpacing,
-                crossAxisSpacing: _mangaHomeCardSpacing,
-              ),
-            ),
-          ),
-        );
-      }
     }
 
     slivers.add(const SliverPadding(padding: EdgeInsets.only(bottom: 88)));
@@ -398,7 +237,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     );
   }
 
-  /// 右下角按钮组：hot/copy 切换。
+  /// 右下角按钮组：漫屋吧/漫屋3 切换。
   Widget _buildFabColumn() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -468,20 +307,16 @@ class _HomePageState extends ConsumerState<HomePage> {
     return slivers;
   }
 
-  /// 右下角切换 hot / copy 首页数据源的悬浮按钮，图标旁显示当前数据源
+  /// 右下角切换漫屋吧 / 漫屋3 首页数据源的悬浮按钮
   Widget _buildSourceFab() {
-    final isCopy = _isCopySource;
+    final isWaman3 = _user.mangaHomeSource == 'waman3';
     return FloatingActionButton.extended(
       heroTag: 'home-source-switch',
-      tooltip: isCopy
-          ? AppLocalizations.of(context)!.switchToHotHome
-          : AppLocalizations.of(context)!.switchToCopyHome,
-      onPressed: () => _user.setMangaHomeSource(isCopy ? 'hot' : 'copy'),
+      tooltip: isWaman3 ? '切换到漫屋吧' : '切换到漫屋3',
+      onPressed: () => _user.setMangaHomeSource(isWaman3 ? 'manwaba' : 'waman3'),
       icon: const Icon(Icons.swap_horiz, size: 20),
       label: Text(
-        isCopy
-            ? AppLocalizations.of(context)!.homeSourceCopy
-            : AppLocalizations.of(context)!.homeSourceHot,
+        isWaman3 ? '漫屋3' : '漫屋吧',
         style: const TextStyle(
           fontWeight: FontWeight.bold,
           fontSize: 13,

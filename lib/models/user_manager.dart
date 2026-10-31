@@ -272,7 +272,7 @@ class UserManager extends ChangeNotifier {
   bool _remoteNoticeEnabled = true;
   String _locale = ''; // '' = follow system, 'zh' = 简体, 'zh-Hant' = 繁体
   bool _bannerVisible = false;
-  String _mangaHomeSource = 'hot';
+  String _mangaHomeSource = 'manwaba';
   // 第三方漫源（漫屋3/漫屋吧）主页切换按钮当前选中项
   String _tpMangaSource = 'manwaba';
   String _waman3BaseUrl = 'https://mseeowpma.cc';
@@ -640,7 +640,7 @@ class UserManager extends ChangeNotifier {
     _remoteNoticeEnabled = prefs.getBool(_keyRemoteNoticeEnabled) ?? true;
     _locale = prefs.getString(_keyLocale) ?? '';
     _bannerVisible = prefs.getBool(_keyBannerVisible) ?? false;
-    _mangaHomeSource = prefs.getString(_keyMangaHomeSource) ?? 'hot';
+    _mangaHomeSource = prefs.getString(_keyMangaHomeSource) ?? 'manwaba';
     _tpMangaSource = prefs.getString(_keyTpMangaSource) ?? 'manwaba';
     _waman3BaseUrl = prefs.getString(_keyWaman3BaseUrl) ?? 'https://mseeowpma.cc';
     _manwabaApiHost = prefs.getString(_keyManwabaApiHost) ?? 'auto';

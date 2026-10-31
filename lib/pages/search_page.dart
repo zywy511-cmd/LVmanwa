@@ -55,10 +55,9 @@ class _SearchPageState extends State<SearchPage> {
   List<Anime> _animes = [];
 
   // ── 多源聚合搜索状态 ──
-  // 'hotcopy'=热辣·拷贝（合并去重） 'waman3'=漫屋3 'manwaba'=漫屋吧
+  // 'all'=全部（漫屋3+漫屋吧） 'waman3'=漫屋3 'manwaba'=漫屋吧
   static const _sourceOptions = [
     ('all', '全部'),
-    ('hotcopy', '热辣·拷贝'),
     ('waman3', '漫屋3'),
     ('manwaba', '漫屋吧'),
   ];
@@ -69,9 +68,8 @@ class _SearchPageState extends State<SearchPage> {
   final List<String> _sourceLabels = []; // 与 _comics 逐项对齐的来源名
   int _pendingSearches = 0; // 「全部」模式并行首查未完成数
 
-  // 「全部」模式优先级：热辣/拷贝 优先展示，其次漫屋3、漫屋吧
-  static const _allPrimary = ['hot', 'copy'];
-  static const _allSecondary = ['waman3', 'manwaba'];
+  // 「全部」模式源列表
+  static const _allSources = ['waman3', 'manwaba'];
 
   String _sourceName(String key) {
     for (final (k, name) in _sourceOptions) {
@@ -290,33 +288,16 @@ class _SearchPageState extends State<SearchPage> {
     }
   }
 
-  /// 漫画搜索：单源直接查；「全部」四源并行首查并按优先级聚合。
-  /// 优先级：热辣/拷贝（合并去重）优先展示，其次漫屋3、漫屋吧。
+  /// 漫画搜索：单源直接查；「全部」两源并行首查并聚合。
   Future<void> _doSearchComic(String keyword, _SearchMode mode) async {
     _sourcePages.clear();
     _sourceMaxPages.clear();
     _sourceTotals.clear();
     if (_sourceFilter == 'all') {
-      const all = [..._allPrimary, ..._allSecondary];
-      _pendingSearches = all.length;
-      final primaryResults = <String, _SourceSlice>{};
-      final secondaryResults = <String, _SourceSlice>{};
-      void settlePrimary() {
-        if (primaryResults.length == _allPrimary.length) {
-          _appendAllSources(primaryResults, _allPrimary);
-        }
-      }
+      _pendingSearches = _allSources.length;
+      final results = <String, _SourceSlice>{};
 
-      // 次级组（漫屋3/漫屋吧）必须等热辣/拷贝全部完成后才渲染，
-      // 保证列表顶部始终是热辣/拷贝的结果（不受接口返回快慢影响）。
-      void settleSecondary() {
-        if (primaryResults.length == _allPrimary.length &&
-            secondaryResults.length == _allSecondary.length) {
-          _appendAllSources(secondaryResults, _allSecondary);
-        }
-      }
-
-      for (final key in all) {
+      for (final key in _allSources) {
         unawaited(
           _searchSourcePage(key, keyword, 1).then((slice) {
             if (!mounted || _mode != mode || _searchQuery != keyword) return;
@@ -324,13 +305,8 @@ class _SearchPageState extends State<SearchPage> {
               _sourcePages[key] = slice.page;
               _sourceMaxPages[key] = slice.maxPage;
               _sourceTotals[key] = slice.total;
-              if (_allPrimary.contains(key)) {
-                primaryResults[key] = slice;
-                settlePrimary();
-              } else {
-                secondaryResults[key] = slice;
-                settleSecondary();
-              }
+              results[key] = slice;
+              _appendAllSources(results, _allSources);
               _offset = _comics.length;
               _pendingSearches--;
               if (_pendingSearches <= 0) _searching = false;
@@ -342,20 +318,6 @@ class _SearchPageState extends State<SearchPage> {
               _sourcePages[key] = 1;
               _sourceMaxPages[key] = 1;
               _sourceTotals[key] = 0;
-              const empty = (
-                comics: <Comic>[],
-                labels: <String>[],
-                page: 1,
-                maxPage: 1,
-                total: 0,
-              );
-              if (_allPrimary.contains(key)) {
-                primaryResults[key] = empty;
-                settlePrimary();
-              } else {
-                secondaryResults[key] = empty;
-                settleSecondary();
-              }
               _pendingSearches--;
               if (_pendingSearches <= 0) _searching = false;
             });
@@ -379,41 +341,38 @@ class _SearchPageState extends State<SearchPage> {
     });
   }
 
-  /// 「全部」模式加载更多：按优先级分组（先热辣/拷贝，再漫屋3/漫屋吧）
-  /// 逐组并行取下一页并保序追加（跨源去重）。
+  /// 「全部」模式加载更多：所有源并行取下一页并保序追加（跨源去重）。
   Future<void> _loadMoreAll() async {
     final keyword = _searchQuery;
     if (keyword == null) return;
-    for (final group in const [_allPrimary, _allSecondary]) {
-      final results = <String, _SourceSlice>{};
-      final tasks = <Future<void>>[];
-      for (final key in group) {
-        final loaded = _sourcePages[key] ?? 0;
-        final max = _sourceMaxPages[key] ?? 1;
-        if (loaded >= max) continue;
-        final next = loaded + 1;
-        tasks.add(
-          _searchSourcePage(key, keyword, next).then((slice) {
-            if (!mounted || _searchQuery != keyword) return;
-            setState(() {
-              _sourcePages[key] = slice.page;
-              _sourceMaxPages[key] = slice.maxPage;
-              _sourceTotals[key] = slice.total;
-              results[key] = slice;
-            });
-          }).catchError((e) {
-            debugPrint('SearchPage $key loadMore error: $e');
-          }),
-        );
-      }
-      if (tasks.isEmpty) continue;
-      await Future.wait(tasks);
-      if (!mounted || _searchQuery != keyword) return;
-      setState(() {
-        _appendAllSources(results, group);
-        _offset = _comics.length;
-      });
+    final results = <String, _SourceSlice>{};
+    final tasks = <Future<void>>[];
+    for (final key in _allSources) {
+      final loaded = _sourcePages[key] ?? 0;
+      final max = _sourceMaxPages[key] ?? 1;
+      if (loaded >= max) continue;
+      final next = loaded + 1;
+      tasks.add(
+        _searchSourcePage(key, keyword, next).then((slice) {
+          if (!mounted || _searchQuery != keyword) return;
+          setState(() {
+            _sourcePages[key] = slice.page;
+            _sourceMaxPages[key] = slice.maxPage;
+            _sourceTotals[key] = slice.total;
+            results[key] = slice;
+          });
+        }).catchError((e) {
+          debugPrint('SearchPage $key loadMore error: $e');
+        }),
+      );
     }
+    if (tasks.isEmpty) return;
+    await Future.wait(tasks);
+    if (!mounted || _searchQuery != keyword) return;
+    setState(() {
+      _appendAllSources(results, _allSources);
+      _offset = _comics.length;
+    });
   }
 
   Future<void> _loadComics({bool reset = true}) async {
@@ -549,7 +508,7 @@ class _SearchPageState extends State<SearchPage> {
       _sourcePages.clear();
       _sourceMaxPages.clear();
       _sourceTotals.clear();
-      _sourceFilter = 'hotcopy'; // 标签浏览后搜索使用 热辣·拷贝 合并源
+      _sourceFilter = 'all'; // 标签浏览后搜索使用全部第三方源
     });
     if (next != null) {
       _loadComics();
