@@ -7,6 +7,7 @@ import '../models/comic.dart' hide Theme;
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/local_favorites.dart';
+import '../utils/third_party_download_manager.dart';
 import '../utils/third_party_reading_progress.dart';
 import '../widgets/third_party_image.dart';
 import 'third_party_reader_page.dart';
@@ -153,6 +154,24 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
         : 0;
     final page = (p != null && p.chapterIndex == index) ? p.page : 1;
     await _openReader(detail.chapters, index, page: page);
+  }
+
+  /// 缓存单章到本地
+  Future<void> _downloadChapter(ThirdPartyChapter chapter) async {
+    final source = _source;
+    final detail = _detail;
+    if (source == null || detail == null) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _DownloadDialog(
+        sourceKey: source.key,
+        comicId: _comicId,
+        comicName: detail.title,
+        chapter: chapter,
+      ),
+    );
   }
 
   /// 右下角「继续阅读」FAB 文案（对齐拷贝/热辣样式）。
@@ -447,6 +466,12 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
                             ),
                             const SizedBox(width: 8),
                           ],
+                          IconButton(
+                            icon: const Icon(Icons.download_outlined, size: 18),
+                            tooltip: '缓存本章',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _downloadChapter(chapter),
+                          ),
                           Icon(
                             Icons.chevron_right,
                             size: 20,
@@ -478,6 +503,107 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
               ),
             ),
           ),
+      ],
+    );
+  }
+}
+
+/// 章节下载进度弹窗
+class _DownloadDialog extends StatefulWidget {
+  final String sourceKey;
+  final String comicId;
+  final String comicName;
+  final ThirdPartyChapter chapter;
+
+  const _DownloadDialog({
+    required this.sourceKey,
+    required this.comicId,
+    required this.comicName,
+    required this.chapter,
+  });
+
+  @override
+  State<_DownloadDialog> createState() => _DownloadDialogState();
+}
+
+class _DownloadDialogState extends State<_DownloadDialog> {
+  double _progress = 0;
+  String _message = '准备下载...';
+  bool _done = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDownload();
+  }
+
+  Future<void> _startDownload() async {
+    try {
+      final source = ThirdPartySources.byKey(widget.sourceKey);
+      if (source == null) throw Exception('未知漫源');
+
+      // 先获取章节图片列表
+      final images = await source.loadChapterImages(widget.comicId, widget.chapter.id);
+
+      if (!mounted) return;
+
+      final stream = ThirdPartyDownloadManager.instance.downloadChapter(
+        sourceKey: widget.sourceKey,
+        comicId: widget.comicId,
+        comicName: widget.comicName,
+        chapterId: widget.chapter.id,
+        chapterName: widget.chapter.name,
+        imageUrls: images,
+      );
+
+      await for (final p in stream) {
+        if (!mounted) return;
+        setState(() {
+          _progress = p.value;
+          _message = p.message;
+        });
+      }
+
+      if (!mounted) return;
+      setState(() => _done = true);
+      await Future.delayed(const Duration(milliseconds: 800));
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _done = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('缓存章节'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(widget.chapter.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 16),
+          LinearProgressIndicator(value: _progress),
+          const SizedBox(height: 8),
+          Text(_message, style: Theme.of(context).textTheme.bodySmall),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(_done ? '完成' : '取消'),
+        ),
       ],
     );
   }

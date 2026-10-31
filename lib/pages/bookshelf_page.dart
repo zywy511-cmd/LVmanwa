@@ -262,6 +262,11 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   }
 
   Future<void> _load({bool silent = false, bool force = false}) async {
+    // 未登录时加载本地收藏，不调用云端API
+    if (!_user.isLoggedIn) {
+      await _loadLocalFavorites();
+      return;
+    }
     if (!force && !_currentItemsEmpty) {
       final cacheTime = _type == _BookshelfType.comic
           ? _comicCacheTime

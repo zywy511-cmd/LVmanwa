@@ -157,15 +157,13 @@ class _NetworkPageState extends State<NetworkPage>
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
+          _buildThirdPartyCard(l10n, tt, cs),
+          const SizedBox(height: AppSpacing.lg),
           _buildStatusBar(l10n, tt, cs),
           const SizedBox(height: AppSpacing.lg),
           _buildModeSelector(l10n, tt, cs),
           const SizedBox(height: AppSpacing.lg),
           _buildNodeGrid(l10n, tt, cs),
-          const SizedBox(height: AppSpacing.lg),
-          _buildProxyCard(l10n, tt, cs),
-          const SizedBox(height: AppSpacing.lg),
-          _buildThirdPartyCard(l10n, tt, cs),
         ],
       ),
     );

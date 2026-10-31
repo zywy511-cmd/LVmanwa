@@ -185,6 +185,20 @@ class _KiraAppState extends ConsumerState<KiraApp> {
       );
     }
 
+    // 浅色模式下强制使用纯白色背景
+    if (brightness == Brightness.light) {
+      colorScheme = colorScheme.copyWith(
+        surface: Colors.white,
+        surfaceDim: Colors.white,
+        surfaceBright: Colors.white,
+        surfaceContainerLowest: Colors.white,
+        surfaceContainerLow: Colors.white,
+        surfaceContainer: Colors.white,
+        surfaceContainerHigh: Colors.white,
+        surfaceContainerHighest: const Color(0xFFF5F5F5),
+      );
+    }
+
     final appFont = _user.theme.appFontFamily;
     final desktopFont = _user.desktopFontFamily;
 
