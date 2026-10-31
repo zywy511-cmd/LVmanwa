@@ -27,6 +27,9 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Analyze code (find compile errors)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
       - name: Pod install
         run: cd ios && pod install && cd ..
 
