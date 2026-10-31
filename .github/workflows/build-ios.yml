@@ -45,7 +45,7 @@ jobs:
       - name: Create IPA
         run: |
           set -euo pipefail
-          APP_PATH="build/ios/iphoneos/Runner.app"
+          APP_PATH="build/ios/Release-iphoneos/Runner.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "ERROR: Runner.app not found!"
             find build/ios -name "*.app" -type d
