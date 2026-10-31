@@ -8,7 +8,7 @@ on:
       - '**.md'
 
 env:
-  FLUTTER_VERSION: "3.35.0"
+  FLUTTER_VERSION: "3.44.0"
 
 jobs:
   build-ios:
@@ -30,33 +30,26 @@ jobs:
       - name: Pod install
         run: cd ios && pod install && cd ..
 
-      - name: Build iOS (ignore codesign error)
+      - name: Build iOS (no codesign)
         env:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-        run: |
-          flutter build ios --release --no-codesign \
-            --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}" \
-            --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}" \
-            || true
+        run: >
+          flutter build ios --release --no-codesign
+          --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}"
+          --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
 
-      - name: Find and package largest Runner.app
+      - name: Create IPA
         run: |
           set -euo pipefail
-          # 找到所有 Runner.app，选最大的那个
-          APP_PATH=$(find build/ios -name "Runner.app" -type d -exec du -k {} \; | sort -nr | head -1 | cut -f2)
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: No Runner.app found!"
-            find build/ios -type d
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "ERROR: Runner.app not found!"
+            find build/ios -name "*.app" -type d
             exit 1
           fi
-          echo "Found Runner.app at: $APP_PATH"
+          echo "App found at: $APP_PATH"
           echo "App size: $(du -sh "$APP_PATH" | cut -f1)"
-          
-          # 列出 app 内容
-          echo "=== App contents ==="
-          ls -la "$APP_PATH"
-          
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           zip -qr LVCP.ipa Payload
