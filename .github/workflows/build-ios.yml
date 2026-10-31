@@ -27,25 +27,44 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Pod install
-        run: cd ios && pod install && cd ..
-
-      - name: Build iOS (no codesign)
+      - name: Build Flutter xcframework
         env:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-        run: >
-          flutter build ios --release --no-codesign
-          --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}"
-          --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
+        run: |
+          flutter build ios-framework --release --no-debug --no-profile \
+            --output=build/ios/framework \
+            --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}" \
+            --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
+
+      - name: Pod install
+        run: cd ios && pod install && cd ..
+
+      - name: Build with xcodebuild directly
+        run: |
+          cd ios
+          set -o pipefail && xcodebuild \
+            -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath ../build/ios \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            build 2>&1 | tee xcodebuild.log
+          XCODE_EXIT=${PIPESTATUS[0]}
+          echo "xcodebuild exit code: $XCODE_EXIT"
+          cd ..
 
       - name: Create IPA
         run: |
           set -euo pipefail
-          APP_PATH="build/ios/iphoneos/Runner.app"
+          APP_PATH="build/ios/Build/Products/Release-iphoneos/Runner.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "ERROR: Runner.app not found!"
-            find build/ios -name "*.app" -type d
+            find build/ios -name "*.app" -type d -exec du -sh {} \;
             exit 1
           fi
           echo "App found at: $APP_PATH"

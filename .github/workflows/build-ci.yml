@@ -10,11 +10,7 @@ on:
         description: "构建说明 (可选)"
         required: false
         default: ""
-  push:
-    branches: [main]
-    paths-ignore:
-      - '**.md'
-      - 'pubspec.yaml'
+  # push 触发已禁用，只保留手动触发
 
 env:
   FLUTTER_VERSION: "3.44.0"
