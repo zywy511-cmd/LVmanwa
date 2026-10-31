@@ -120,34 +120,39 @@ class ThirdPartyDownloadManager {
       message: '准备下载 $chapterName',
     );
 
-    // 并发下载，最多 _defaultImageConcurrency 张同时进行
+    // 并发下载：用 worker 池方式，最多 _defaultImageConcurrency 张同时进行
     final queue = List<String>.from(imageUrls);
-    final active = <Future<void>>[];
+    var loaded = 0;
     final errors = <String>[];
+    final stopwatch = Stopwatch()..start();
 
-    while (queue.isNotEmpty || active.isNotEmpty) {
-      // 补充并发任务
-      while (active.length < _defaultImageConcurrency && queue.isNotEmpty) {
+    Future<void> worker() async {
+      while (queue.isNotEmpty) {
         final url = queue.removeAt(0);
         final index = imageUrls.indexOf(url);
-        active.add(
-          _downloadSingleImage(source, url, '$dirPath/${index.toString().padLeft(4, '0')}.jpg')
-              .then((_) {
-            loaded++;
-          }).catchError((e) {
-            errors.add(url);
-            loaded++;
-          }),
-        );
+        try {
+          await _downloadSingleImage(
+              source, url, '$dirPath/${index.toString().padLeft(4, '0')}.jpg');
+        } catch (e) {
+          errors.add(url);
+        }
+        loaded++;
       }
+    }
+
+    // 启动 N 个 worker
+    final workers = List.generate(_defaultImageConcurrency, (_) => worker());
+
+    // 等待所有 worker 完成，同时定期输出进度
+    while (loaded < total) {
+      await Future.delayed(const Duration(milliseconds: 100));
       yield TpChapterDownloadProgress(
         loaded: loaded,
         total: total,
         message: '正在下载 $loaded/$total',
       );
-      await Future.any(active);
-      active.removeWhere((f) => f.isCompleted);
     }
+    await Future.wait(workers);
 
     // 保存 manifest
     _manifest.putIfAbsent(comicPathWord, () => {});
