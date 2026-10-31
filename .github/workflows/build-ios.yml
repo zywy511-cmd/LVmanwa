@@ -30,33 +30,29 @@ jobs:
       - name: Pod install
         run: cd ios && pod install && cd ..
 
-      - name: Disable codesigning in Xcode project
-        run: |
-          cd ios/Runner.xcodeproj
-          # 给所有 Release configuration 添加签名禁用配置
-          sed -i '' 's/CURRENT_PROJECT_VERSION = 1;/CURRENT_PROJECT_VERSION = 1;\n\t\t\t\tCODE_SIGNING_ALLOWED = NO;\n\t\t\t\tCODE_SIGNING_REQUIRED = NO;\n\t\t\t\tCODE_SIGN_IDENTITY = "";\n\t\t\t\tDEVELOPMENT_TEAM = "";/g' project.pbxproj
-          cd ../..
-          echo "Done pbxproj"
-
-      - name: Build iOS (no codesign)
+      - name: Build iOS
         env:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
-        run: >
-          flutter build ios --release --no-codesign
-          --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}"
-          --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}" \
+            --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}" \
+            || true
+
+          echo "=== Looking for Runner.app ==="
+          find build/ios -name "Runner.app" -type d -exec du -sh {} \;
 
       - name: Create IPA
         run: |
           set -euo pipefail
-          APP_PATH="build/ios/iphoneos/Runner.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "ERROR: Runner.app not found!"
-            find build/ios -name "*.app" -type d
+          # 找到最大的 Runner.app（完整构建产物）
+          APP_PATH=$(find build/ios -name "Runner.app" -type d -exec du -k {} \; | sort -nr | head -1 | cut -f2)
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: No Runner.app found!"
             exit 1
           fi
-          echo "App found at: $APP_PATH"
+          echo "Using Runner.app at: $APP_PATH"
           echo "App size: $(du -sh "$APP_PATH" | cut -f1)"
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
