@@ -1227,33 +1227,12 @@ class _MangaCard extends StatelessWidget {
                 ComicHeroTags.cover,
                 ComicCardSurface(
                   child: CoverBrightnessFilter(
-                    child: CachedNetworkImage(
-                      imageUrl: comic.cover,
+                    child: TpAwareImage(
+                      sourceKey: ThirdPartyComicSource.sourceKeyOfPathWord(
+                        comic.pathWord,
+                      ),
+                      url: comic.cover,
                       fit: BoxFit.cover,
-                      width: width,
-                      height: double.infinity,
-                      fadeInDuration: Duration.zero,
-                      fadeOutDuration: Duration.zero,
-                      placeholder: (_, _) => Container(
-                        color: cs.surfaceContainerHighest,
-                        child: Center(
-                          child: Icon(
-                            Icons.image,
-                            color: cs.onSurfaceVariant,
-                            size: 32,
-                          ),
-                        ),
-                      ),
-                      errorWidget: (_, _, _) => Container(
-                        color: cs.surfaceContainerHighest,
-                        child: Center(
-                          child: Icon(
-                            Icons.broken_image,
-                            color: cs.onSurfaceVariant,
-                            size: 32,
-                          ),
-                        ),
-                      ),
                     ),
                   ),
                 ),

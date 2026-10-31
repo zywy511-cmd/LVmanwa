@@ -17,13 +17,16 @@ import '../providers/app_providers.dart';
 import '../providers/repository_providers.dart';
 import '../repositories/bookshelf_repository.dart';
 import '../routing/app_router.dart';
+import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
 import '../utils/cover_brightness_filter.dart';
+import '../utils/local_favorites.dart';
 import '../utils/reading_history.dart';
 import '../utils/time_format.dart';
 import '../utils/toast.dart';
 import '../widgets/comic_card_skeleton.dart';
 import '../widgets/comic_hero_tags.dart';
+import '../widgets/third_party_image.dart';
 import 'home_page.dart';
 
 enum _BookshelfType { comic, anime }
@@ -64,6 +67,10 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   bool _showUpdateOnly = false;
   bool _showBackToTop = false;
 
+  // 本地收藏（未登录时使用）
+  List<LocalFavoriteItem> _localFavorites = [];
+  bool _loadingLocalFavorites = false;
+
   static const _showUpdateOnlyKey = 'local_bookshelf_show_update_only';
   static const _legacyShowUpdateOnlyKey = 'bookshelf_show_update_only';
 
@@ -86,7 +93,18 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
       });
     } else {
       _loading = false;
+      _loadLocalFavorites();
     }
+  }
+
+  Future<void> _loadLocalFavorites() async {
+    setState(() => _loadingLocalFavorites = true);
+    final list = await LocalFavorites.instance.getAll();
+    if (!mounted) return;
+    setState(() {
+      _localFavorites = list;
+      _loadingLocalFavorites = false;
+    });
   }
 
   @override
@@ -590,7 +608,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                   child: _buildToolbar(context, hp),
                 ),
               ),
-              if (_loading)
+              if (_loading || _loadingLocalFavorites)
                 SliverPadding(
                   padding: EdgeInsets.symmetric(horizontal: hp),
                   sliver: SliverGrid(
@@ -607,6 +625,8 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                         ),
                   ),
                 )
+              else if (!_user.isLoggedIn)
+                _buildLocalFavoritesGrid(context, hp)
               else if (_currentItemsEmpty)
                 SliverFillRemaining(child: _buildEmptyState(context))
               else if (_type == _BookshelfType.comic &&
@@ -737,6 +757,86 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
             ),
             const SizedBox(height: AppSpacing.sm),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 本地收藏网格（未登录时使用）
+  Widget _buildLocalFavoritesGrid(BuildContext context, double hp) {
+    final cs = Theme.of(context).colorScheme;
+    final tt = Theme.of(context).textTheme;
+    if (_localFavorites.isEmpty) {
+      return SliverFillRemaining(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.favorite_border, size: 64, color: cs.onSurfaceVariant),
+              const SizedBox(height: AppSpacing.lg),
+              Text(
+                '还没有收藏的漫画',
+                style: tt.titleMedium?.copyWith(color: cs.onSurfaceVariant),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                '在漫画详情页点击右上角爱心即可收藏',
+                style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: hp),
+      sliver: SliverGrid(
+        delegate: SliverChildBuilderDelegate((context, i) {
+          final item = _localFavorites[i];
+          return GestureDetector(
+            onTap: () {
+              context.pushNamed(
+                AppRoutes.comicDetail,
+                pathParameters: {'pathWord': item.pathWord},
+              );
+            },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: AppRadius.mdR,
+                    child: TpAwareImage(
+                      sourceKey: item.sourceKey,
+                      url: item.cover,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  item.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tt.bodySmall,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  item.sourceName,
+                  style: tt.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }, childCount: _localFavorites.length),
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 130,
+          childAspectRatio: 0.55,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
         ),
       ),
     );

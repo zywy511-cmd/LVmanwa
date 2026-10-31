@@ -27,7 +27,6 @@ const _navKeyToBranchIndex = {
 List<String> _visibleNavKeys(UserManager user) {
   final keys = user.navOrder
       .where(_navKeyToBranchIndex.containsKey)
-      .where((key) => user.isLoggedIn || key != 'bookshelf')
       .where((key) => user.animeFeatureEnabled || key != 'anime')
       .toList();
   return keys.isEmpty ? const [UserManager.defaultNavKey] : keys;

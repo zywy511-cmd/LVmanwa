@@ -165,8 +165,6 @@ class _NetworkPageState extends State<NetworkPage>
           const SizedBox(height: AppSpacing.lg),
           _buildProxyCard(l10n, tt, cs),
           const SizedBox(height: AppSpacing.lg),
-          _buildAdvancedCard(l10n, tt, cs),
-          const SizedBox(height: AppSpacing.lg),
           _buildThirdPartyCard(l10n, tt, cs),
         ],
       ),

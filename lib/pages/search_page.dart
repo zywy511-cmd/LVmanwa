@@ -71,6 +71,12 @@ class _SearchPageState extends State<SearchPage> {
   // 「全部」模式源列表
   static const _allSources = ['waman3', 'manwaba'];
 
+  // 漫屋吧分类标签
+  static const _manwabaCategories = [
+    '热血', '玄幻', '恋爱', '冒险', '古风', '都市', '穿越', '奇幻',
+    '搞笑', '少年', '战斗', '重生', '逆袭', '韩漫', '完整版',
+  ];
+
   String _sourceName(String key) {
     for (final (k, name) in _sourceOptions) {
       if (k == key) return name;
@@ -667,9 +673,9 @@ class _SearchPageState extends State<SearchPage> {
                   ),
                 ),
               ),
-            if (_keywords.isNotEmpty &&
+            if (!_isAnimeMode &&
+                _searchQuery == null &&
                 _selectedTag == null &&
-                !_hasResults &&
                 !_searching)
               SliverToBoxAdapter(
                 child: Padding(
@@ -679,68 +685,12 @@ class _SearchPageState extends State<SearchPage> {
                     children: [
                       Row(
                         children: [
-                          Icon(
-                            Icons.local_fire_department,
-                            size: 20,
-                            color: cs.primary,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            l10n.hotSearchTitle,
-                            style: tt.titleSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.md),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: _keywords
-                            .map(
-                              (k) => ActionChip(
-                                label: Text(k),
-                                onPressed: () => _onKeywordTap(k),
-                                avatar: Icon(
-                                  Icons.trending_up,
-                                  size: 16,
-                                  color: cs.primary,
-                                ),
-                              ),
-                            )
-                            .toList(),
-                      ),
-                      const SizedBox(height: AppSpacing.xl),
-                    ],
-                  ),
-                ),
-              ),
-            if (!_isAnimeMode &&
-                _tags.isNotEmpty &&
-                _searchQuery == null &&
-                (_selectedTag != null || !_searching))
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(hp, 0, hp, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
                           Icon(Icons.category, size: 20, color: cs.primary),
                           const SizedBox(width: 6),
                           Text(
-                            l10n.allTagsTitle,
+                            '漫屋吧分类',
                             style: tt.titleSmall?.copyWith(
                               fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.sm),
-                          Text(
-                            l10n.tagCount(_tags.length),
-                            style: tt.bodySmall?.copyWith(
-                              color: cs.onSurfaceVariant,
                             ),
                           ),
                         ],
@@ -750,17 +700,16 @@ class _SearchPageState extends State<SearchPage> {
                         spacing: _tagSpacing,
                         runSpacing: _tagSpacing,
                         children: [
-                          for (final t in _tags)
-                            if (_selectedTag == null ||
-                                _selectedTag == t.pathWord)
-                              FilterChip(
-                                label: Text(
-                                  t.count > 0 ? '${t.name} ${t.count}' : t.name,
-                                ),
-                                selected: _selectedTag == t.pathWord,
-                                showCheckmark: false,
-                                onSelected: (_) => _selectTag(t.pathWord),
-                              ),
+                          for (final cat in _manwabaCategories)
+                            FilterChip(
+                              label: Text(cat),
+                              selected: _selectedTag == cat,
+                              showCheckmark: false,
+                              onSelected: (_) {
+                                _searchController.text = cat;
+                                _doSearch(cat);
+                              },
+                            ),
                         ],
                       ),
                       const SizedBox(height: AppSpacing.md),

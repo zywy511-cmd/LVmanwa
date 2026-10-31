@@ -6,6 +6,7 @@ import '../api/third_party/third_party_sources.dart';
 import '../models/comic.dart' hide Theme;
 import '../theme/app_radius.dart';
 import '../theme/app_spacing.dart';
+import '../utils/local_favorites.dart';
 import '../utils/third_party_reading_progress.dart';
 import '../widgets/third_party_image.dart';
 import 'third_party_reader_page.dart';
@@ -40,11 +41,42 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
   bool _loading = true;
   String? _error;
   ThirdPartyProgressRecord? _progress;
+  bool _isFavorited = false;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _checkFavorite();
+  }
+
+  Future<void> _checkFavorite() async {
+    final fav = await LocalFavorites.instance.isFavorite(widget.pathWord);
+    if (!mounted) return;
+    setState(() => _isFavorited = fav);
+  }
+
+  Future<void> _toggleFavorite() async {
+    final detail = _detail;
+    if (detail == null) return;
+    final item = LocalFavoriteItem(
+      pathWord: widget.pathWord,
+      name: detail.title,
+      cover: detail.cover,
+      sourceKey: _source?.key ?? '',
+      sourceName: _source?.name ?? '',
+      author: detail.authors.isNotEmpty ? detail.authors.join(' / ') : null,
+      addedAt: DateTime.now(),
+    );
+    final result = await LocalFavorites.instance.toggle(item);
+    if (!mounted) return;
+    setState(() => _isFavorited = result);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(result ? '已添加到收藏' : '已取消收藏'),
+        duration: const Duration(milliseconds: 1200),
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -162,7 +194,20 @@ class _ThirdPartyComicDetailPageState extends State<ThirdPartyComicDetailPage> {
     final source = _source;
 
     return Scaffold(
-      appBar: AppBar(title: Text(_detail?.title ?? source?.name ?? '')),
+      appBar: AppBar(
+        title: Text(_detail?.title ?? source?.name ?? ''),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isFavorited ? Icons.favorite : Icons.favorite_border,
+              color: _isFavorited ? Colors.red : null,
+            ),
+            tooltip: _isFavorited ? '取消收藏' : '收藏',
+            onPressed: _loading ? null : _toggleFavorite,
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: _loading
           ? const Center(child: ExpressiveLoadingIndicator())
           : _error != null
