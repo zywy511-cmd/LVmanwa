@@ -34,10 +34,15 @@ jobs:
         env:
           DANDANPLAY_APP_ID: ${{ secrets.DANDANPLAY_APP_ID }}
           DANDANPLAY_APP_SECRET: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          CODE_SIGNING_ALLOWED: NO
+          CODE_SIGNING_REQUIRED: NO
+          CODE_SIGN_IDENTITY: ""
+          EXPANDED_CODE_SIGN_IDENTITY: ""
         run: >
           flutter build ios --release --no-codesign
           --dart-define=DANDANPLAY_APP_ID="${DANDANPLAY_APP_ID}"
           --dart-define=DANDANPLAY_APP_SECRET="${DANDANPLAY_APP_SECRET}"
+          --build-name=1.0.0 --build-number=1
 
       - name: Create IPA
         run: |
