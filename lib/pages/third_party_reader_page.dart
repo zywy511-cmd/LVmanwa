@@ -303,12 +303,33 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
     setState(() => _page = page);
     _syncChapterFromPage(page);
     unawaited(_saveProgress());
+    // 预加载后面8页图片
+    unawaited(_preloadNextPages(page, count: 8));
     // 连续阅读：还剩 2 页时预加载下一话，翻到末尾时已就绪无缝衔接
     if (_user.readerContinuousReading &&
         page >= _flat.length - 2 &&
         _chain.isNotEmpty &&
         _chain.last.globalIndex < widget.chapters.length - 1) {
       unawaited(_appendNext());
+    }
+  }
+
+  /// 预加载后面 N 页图片到内存缓存
+  Future<void> _preloadNextPages(int currentPage, {int count = 8}) async {
+    final source = _source;
+    if (source == null) return;
+    final start = currentPage; // currentPage 是1-based，后面的页从 currentPage 开始
+    final end = (currentPage + count).clamp(0, _flat.length);
+    for (var i = start; i < end; i++) {
+      final url = _flat[i];
+      final request = source.imageRequest(url);
+      if (request == null) continue;
+      try {
+        final provider = ThirdPartyImageProvider(url, request);
+        await provider.fetchBytes(); // 下载并缓存到内存
+      } catch (_) {
+        // 预加载失败忽略，显示时会重试
+      }
     }
   }
 
