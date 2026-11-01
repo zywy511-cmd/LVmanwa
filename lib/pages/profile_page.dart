@@ -332,7 +332,7 @@ class _ProfilePageState extends State<ProfilePage> {
               padding: const EdgeInsets.all(16),
               child: _user.isLoggedIn
                   ? _buildUserCard(cs, tt)
-                  : _buildLoginCard(cs, tt),
+                  : _buildDefaultUserCard(cs, tt),
             ),
           ),
           SliverToBoxAdapter(
@@ -462,6 +462,42 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDefaultUserCard(ColorScheme cs, TextTheme tt) {
+    return Card(
+      color: cs.surfaceContainerLow,
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 32,
+              backgroundColor: cs.primaryContainer,
+              child: Icon(
+                Icons.person,
+                size: 32,
+                color: cs.onPrimaryContainer,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.lg),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('漫屋吧', style: tt.titleMedium),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    '本地模式 · 无需登录',
+                    style: tt.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

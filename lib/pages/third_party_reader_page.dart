@@ -10,6 +10,7 @@ import '../l10n/app_localizations.dart';
 import '../models/user_manager.dart';
 import '../theme/app_spacing.dart';
 import '../theme/reader_chrome.dart';
+import '../utils/local_history.dart';
 import '../utils/third_party_reading_progress.dart';
 import '../widgets/reader_status_overlay.dart';
 import '../widgets/third_party_image.dart';
@@ -91,6 +92,25 @@ class _ThirdPartyReaderPageState extends State<ThirdPartyReaderPage> {
     _page = widget.initialPage;
     _loadSingleChapter(_indexSafe, page: widget.initialPage);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    // 记录本地浏览历史
+    _recordHistory();
+  }
+
+  void _recordHistory() {
+    final source = ThirdPartySources.byKey(widget.sourceKey);
+    final chapter = widget.chapters[_indexSafe];
+    LocalHistory.instance.add(
+      LocalHistoryItem(
+        pathWord: '${widget.sourceKey}:${widget.comicId}',
+        name: widget.comicName,
+        cover: '',
+        sourceKey: widget.sourceKey,
+        sourceName: source?.name ?? widget.sourceKey,
+        chapterName: chapter.name,
+        page: widget.initialPage,
+        viewedAt: DateTime.now(),
+      ),
+    );
   }
 
   @override

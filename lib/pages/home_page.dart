@@ -262,8 +262,25 @@ class _HomePageState extends ConsumerState<HomePage> {
       '最新完整版': Icons.done_all,
       '女主逆袭': Icons.auto_awesome,
     };
-    var index = 0;
+    
+    // 自定义板块顺序：热门收藏-热门-完整版-最近更新
+    const desiredOrder = ['热门收藏', '热门', '最新完整版', '最新更新'];
+    final sortedSections = <String, List<Comic>>{};
+    // 先按期望顺序放
+    for (final key in desiredOrder) {
+      if (sections.containsKey(key)) {
+        sortedSections[key] = sections[key]!;
+      }
+    }
+    // 再放其他没列出来的板块
     for (final entry in sections.entries) {
+      if (!sortedSections.containsKey(entry.key)) {
+        sortedSections[entry.key] = entry.value;
+      }
+    }
+    
+    var index = 0;
+    for (final entry in sortedSections.entries) {
       if (entry.value.isEmpty) continue;
       final scope = 'tp-$sourceKey-$index';
       slivers.add(

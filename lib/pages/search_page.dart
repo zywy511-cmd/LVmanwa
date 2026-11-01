@@ -54,14 +54,13 @@ class _SearchPageState extends State<SearchPage> {
   List<Comic> _comics = [];
   List<Anime> _animes = [];
 
-  // ── 多源聚合搜索状态 ──
-  // 'all'=全部（漫屋3+漫屋吧） 'waman3'=漫屋3 'manwaba'=漫屋吧
+  // ── 单源搜索状态 ──
+  // 'waman3'=漫屋3 'manwaba'=漫屋吧
   static const _sourceOptions = [
-    ('all', '全部'),
     ('waman3', '漫屋3'),
     ('manwaba', '漫屋吧'),
   ];
-  String _sourceFilter = 'all';
+  String _sourceFilter = 'manwaba'; // 默认搜索漫屋吧
   final Map<String, int> _sourcePages = {}; // 每源已加载页码
   final Map<String, int> _sourceMaxPages = {}; // 每源最大页码
   final Map<String, int> _sourceTotals = {}; // 每源总条数
@@ -514,7 +513,7 @@ class _SearchPageState extends State<SearchPage> {
       _sourcePages.clear();
       _sourceMaxPages.clear();
       _sourceTotals.clear();
-      _sourceFilter = 'all'; // 标签浏览后搜索使用全部第三方源
+      _sourceFilter = 'manwaba'; // 标签浏览后搜索默认使用漫屋吧
     });
     if (next != null) {
       _loadComics();
@@ -617,6 +616,18 @@ class _SearchPageState extends State<SearchPage> {
                     ],
                     selected: {_mode},
                     onSelectionChanged: (v) => _setMode(v.first),
+                  ),
+                ),
+              ),
+            if (!_isAnimeMode)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(hp, 8, hp, 4),
+                  child: Text(
+                    '点击漫屋吧或漫屋3切换搜索源',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
                   ),
                 ),
               ),
